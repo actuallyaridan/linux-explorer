@@ -65,26 +65,6 @@ Overwrite and conflict resolution, symlink and permission handling, cross-device
 
 So `src/model/FileOps.cpp` is a thin facade over KIO jobs, and nothing in this repository reads or writes file contents itself. What's left to write is the Windows 7 chrome, which is the part worth writing by hand, and which a fork would have made permanently painful to keep in sync with upstream.
 
-## Architecture
-
-| Path | Role |
-|------|------|
-| `src/model/DirectoryModel.*` | `KDirModel` + `KDirSortFilterProxyModel`, folders-first natural sort |
-| `src/model/GroupingProxy.*` | Turns the flat listing into Win7's "Group by" headings |
-| `src/model/FileOps.*` | The KIO facade: copy, move, trash, delete, rename, drop, clipboard, undo |
-| `src/model/Archives.*` | Which archives can be walked into, and as what URL |
-| `src/data/FileManagerService.*` | `org.freedesktop.FileManager1`, and the single-instance lock |
-| `src/data/Settings.*` | What the window remembers between runs |
-| `src/ui/MainWindow.*` | Navigation bar, command bar, menus, keyboard shortcuts |
-| `src/ui/FileView.*` | The file list in all eight view modes, with previews and drag and drop |
-| `src/ui/NavigationPane.*` | Left pane, backed by `KFilePlacesModel` |
-| `src/ui/MountDialog.*` | Connect and disconnect attached drives |
-| `src/ui/MapDriveDialog.*` | Map a network share, UNC syntax and all |
-| `src/ui/OptionsDialog.*` | Win7's Folder Options, titled "Options" |
-| `src/ui/DetailsPane.*` | The bottom details strip |
-| `src/ui/PreviewPane.*` | The right-hand preview pane (Alt+P) |
-| `src/ui/Win7Ui.h` | Shared Win7 look-and-feel toolkit, kept in sync with linux-control |
-| `assets/images/` | All artwork, compiled into the binary via `src/ui/win7ui.qrc` |
 
 ## Features
 
