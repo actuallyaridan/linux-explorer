@@ -1,0 +1,32 @@
+[Desktop Entry]
+Name=File Explorer
+GenericName=File Manager
+Comment=Browse files and folders
+Exec=explorer %U
+Icon=system-file-manager
+Terminal=false
+Type=Application
+MimeType=inode/directory;x-directory/normal;inode/mount-point;application/x-gnome-saved-search;
+Categories=Qt;KDE;System;FileTools;FileManager;
+Keywords=explorer;files;folders;browse;file manager;
+# Without this the pointer keeps its ordinary shape through the whole launch
+# and the taskbar shows nothing, so a slow cold start looks like a click that
+# did not register.
+StartupNotify=true
+# Qt derives WM_CLASS from the executable name. Naming it here is what lets the
+# taskbar group Explorer's windows under this entry rather than showing them as
+# an unrecognised application beside it.
+StartupWMClass=explorer
+Actions=NewWindow;OpenHome;
+
+# The closest thing to a Win7 jump list: right-clicking the taskbar button or
+# the launcher entry offers these.
+[Desktop Action NewWindow]
+Name=Open New Window
+Exec=explorer
+Icon=window-new
+
+[Desktop Action OpenHome]
+Name=Open Home Folder
+Exec=explorer ~
+Icon=user-home

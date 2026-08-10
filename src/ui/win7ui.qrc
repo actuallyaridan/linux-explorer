@@ -1,0 +1,40 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <!--
+      Every image the Win7 chrome draws, compiled into the binary from
+      assets/images; nothing loads artwork off disk at runtime.
+    -->
+    <qresource prefix="/win7">
+        <!--
+          Branch expander art for the navigation pane. Files rather than pixmaps
+          painted in C++ because the expanders are drawn by Qt's stylesheet
+          engine, which can only take an image by URL; a QProxyStyle override of
+          PE_IndicatorBranch would never be reached.
+
+          Generated to match Win7Ui::arrowPixmap's 7:4 proportions: collapsed a
+          hollow triangle pointing right, expanded a solid one pointing down.
+        -->
+        <file alias="branch-closed.png">../../assets/images/branch-closed.png</file>
+        <file alias="branch-closed@2x.png">../../assets/images/branch-closed@2x.png</file>
+        <file alias="branch-open.png">../../assets/images/branch-open.png</file>
+        <file alias="branch-open@2x.png">../../assets/images/branch-open@2x.png</file>
+
+        <!--
+          Chrome lifted from Windows 7 itself rather than approximated in code.
+
+          commandbar and detailsbar are one column wide in effect: every column
+          is identical, so only the vertical profile carries information, and the
+          bottom (resp. top) row is the strip's hairline rule. Both are applied
+          as stylesheet backgrounds in Win7Ui.h.
+
+          The three drive images are the capacity bar, drawn by CapacityBar.h:
+          a 189x13 trough with an 11px fill inside its 1px border, red once the
+          drive is nearly full.
+        -->
+        <file alias="commandbar.png">../../assets/images/commandbar.png</file>
+        <file alias="detailsbar.png">../../assets/images/detailsbar.png</file>
+        <file alias="driveprogressbackground.png">../../assets/images/driveprogressbackground.png</file>
+        <file alias="drivefillblue.png">../../assets/images/drivefillblue.png</file>
+        <file alias="drivefillred.png">../../assets/images/drivefillred.png</file>
+    </qresource>
+</RCC>
