@@ -11,7 +11,7 @@
 <br>
 
 > [!WARNING]
-> **Very much a work in progress.** The window chrome, navigation and file operations are in place, but plenty is still missing or rough. Not daily-driveable yet.
+> **Very much a work in progress.** <br>Most things are done, but there are still things that need work. Not really daily-driveable yet.
 
 ## Building
 
