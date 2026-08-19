@@ -1,7 +1,9 @@
 #include "FileView.h"
 #include "DirectoryModel.h"
 #include "GroupingProxy.h"
-#include "Win7Ui.h"
+#include "aero/text.h"
+#include "aero/listview.h"
+#include "aero/palette.h"
 
 #include <KFilePreviewGenerator>
 #include <KIO/Global>
@@ -35,24 +37,20 @@
 
 namespace {
 
-// How far below the top of the list area Win7 puts its status text.
 constexpr int kMessageTop = 20;
 
-// The selection tick box, when Folder Options has it switched on.
+// The selection tick box, when the options have it switched on
 constexpr int kCheckSize = 16;
 constexpr int kCheckMargin = 2;
 
-// How long a folder has to be hovered mid-drag before it opens. Long enough
-// that dragging *across* one on the way somewhere else does not open it.
+// Long enough that dragging across a folder on the way past does not open it
 constexpr int kSpringLoadDelay = 700;
 
-// Win7's tile is a 48px icon with three lines beside it; content rows are a
-// 32px icon with two. Both measured from the original.
+// A 48px icon with three lines, and a 32px icon with two
 constexpr int kTileWidth = 280;
 constexpr int kTileHeight = 60;
 constexpr int kContentHeight = 50;
 
-// The width the details view gives each column before the user resizes it.
 int defaultColumnWidth(int sourceColumn)
 {
     switch (sourceColumn) {
@@ -78,8 +76,7 @@ QString columnTitle(int sourceColumn)
     }
 }
 
-// Win7's visual column order, which is not KDirModel's storage order: Name,
-// Date modified, Type, Size, then anything the user has switched on.
+// Win7's visual order, which is not the order the model stores them in
 const QList<int> &visualColumnOrder()
 {
     static const QList<int> order = {
@@ -94,9 +91,8 @@ const QList<int> &visualColumnOrder()
     return order;
 }
 
-// Walks a view index back to the flat listing DirectoryModel speaks. With
-// "Group by" on, the details view is showing the GroupingProxy instead, whose
-// indices DirectoryModel cannot read.
+// Back to the flat listing the directory model speaks, since with grouping on
+// the details view shows a proxy whose indices it cannot read
 QModelIndex mapToFlat(const QModelIndex &index, const QAbstractItemModel *flat)
 {
     QModelIndex walk = index;
@@ -109,13 +105,11 @@ QModelIndex mapToFlat(const QModelIndex &index, const QAbstractItemModel *flat)
     return walk;
 }
 
-// Draws the two layouts QStyledItemDelegate has no notion of, and owns the
-// inline rename editor for every mode.
+// The two layouts the base delegate has no notion of, plus the inline rename
+// editor
 //
-// The rename is deliberately not written back through the model: KDirModel's
-// setData performs it without recording it with KIO's undo manager, so it
-// could not be undone. setModelData reports the new name and leaves the work
-// to FileOps.
+// The rename is not written back through the model, which would perform it
+// without recording it with the undo manager
 class ItemDelegate : public QStyledItemDelegate {
 public:
     enum Layout { Standard, Tile, Content };
@@ -129,8 +123,8 @@ public:
     void setLayout(Layout layout) { m_layout = layout; }
     void setRowWidth(int width) { m_rowWidth = width; }
 
-    // `rowBased` centres the box at the left of the row; the icon modes get it
-    // in the cell's top-left corner, where Windows draws it.
+    // A row based mode centres the box at the left of the row, where the icon
+    // modes get it in the cell's top left corner
     void setCheckBoxes(bool on, bool rowBased)
     {
         m_checkBoxes = on;
@@ -139,8 +133,7 @@ public:
 
     bool checkBoxes() const { return m_checkBoxes; }
 
-    // Where the tick box sits in a cell. The views need this too, to tell a
-    // click on the box from a click on the item.
+    // The views need this too, to tell a click on the box from one on the item
     QRect checkRect(const QRect &itemRect) const
     {
         if (!m_checkBoxes)
@@ -167,18 +160,16 @@ public:
         }
     }
 
-    // Draws the tick box and reports the space it took, so the caller can paint
-    // clear of it. Zero when boxes are off.
+    // Reports the space taken, so the caller can paint clear of it
     int paintCheckBox(QPainter *painter, const QStyleOptionViewItem &option,
                       const QModelIndex &index) const
     {
-        // Logical column 0 is the name column whatever order the header has
-        // been dragged into; a "Group by" heading has no file to select.
+        // The first logical column is the name whatever the header's order,
+        // and a grouping heading has no file to select
         if (!m_checkBoxes || index.column() != 0 || itemFor(index).isNull())
             return 0;
 
-        // The box follows the selection rather than a state of its own, as
-        // Win7's does: ticking one *is* selecting the row.
+        // The box follows the selection rather than a state of its own
         QStyleOptionButton box;
         box.rect = checkRect(option.rect);
         box.state = QStyle::State_Enabled
@@ -196,8 +187,7 @@ public:
     {
         if (m_layout == Standard) {
             QStyleOptionViewItem shifted = option;
-            // Painted first and the content moved off it. The icon modes need
-            // no shift: the box sits over empty space beside the icon.
+            // The icon modes need no shift, the box sitting over empty space
             const int reserved = paintCheckBox(painter, option, index);
             shifted.rect.setLeft(shifted.rect.left() + reserved);
             QStyledItemDelegate::paint(painter, shifted, index);
@@ -207,23 +197,22 @@ public:
         QStyleOptionViewItem opt = option;
         initStyleOption(&opt, index);
 
-        // The style still draws the row, so the highlight, hover and focus
-        // rectangle match every other list in the app. Only the content is
-        // ours, hence stripping icon and text out of the option first.
+        // The style still draws the row, so only the content is ours, hence
+        // stripping the icon and text out first
         opt.text.clear();
         opt.icon = QIcon();
         opt.features &= ~QStyleOptionViewItem::HasDecoration;
         QStyle *style = opt.widget ? opt.widget->style() : QApplication::style();
         style->drawControl(QStyle::CE_ItemViewItem, &opt, painter, opt.widget);
 
-        // After the background, or the row's highlight would paint over it.
+        // After the background, or the row's highlight would paint over it
         const int reserved = paintCheckBox(painter, option, index);
 
         const bool selected = opt.state & QStyle::State_Selected;
         const QColor primary = selected ? opt.palette.color(QPalette::HighlightedText)
-                                        : QColor(0x00, 0x00, 0x00);
+                                        : Aero::Palette::rgb(Aero::Palette::Text);
         const QColor secondary = selected ? opt.palette.color(QPalette::HighlightedText)
-                                          : QColor(0x5A, 0x5A, 0x5A);
+                                          : Aero::Palette::rgb(Aero::Palette::MutedText);
 
         const int iconSize = (m_layout == Tile) ? 48 : 32;
         const QRect body = option.rect.adjusted(4 + reserved, 3, -6, -3);
@@ -247,8 +236,7 @@ public:
         painter->setFont(opt.font);
 
         if (m_layout == Tile) {
-            // Name, then type, then size: three lines, vertically centred as a
-            // block against the icon beside them.
+            // Three lines, centred as a block against the icon beside them
             QStringList lines{name};
             if (!type.isEmpty())
                 lines << type;
@@ -265,8 +253,7 @@ public:
                 y += lineHeight;
             }
         } else {
-            // Content: name and type on the left, size on the right, the way
-            // Win7's content view puts the metadata at the far edge.
+            // Name and type on the left, size at the far edge
             const int lineHeight = fm.height();
             const int top = text.top() + (text.height() - lineHeight * 2) / 2;
             const int sizeWidth = size.isEmpty() ? 0 : fm.horizontalAdvance(size) + 12;
@@ -297,16 +284,14 @@ public:
             return;
         }
 
-        // The real name on disk, never the display name: committing a
-        // Windows-friendly label or an elided extension would rename the file
-        // to something the user only ever saw as a caption.
+        // The real name on disk, since committing a friendly label or an
+        // elided extension would rename the file to a caption
         const KFileItem item = itemFor(index);
         const QString name = item.isNull() ? index.data(Qt::DisplayRole).toString()
                                            : item.name();
         line->setText(name);
 
-        // Windows preselects the base name so typing replaces it and leaves
-        // the extension alone. Folders have no extension to protect.
+        // Windows preselects the base name, leaving the extension alone
         const int dot = name.lastIndexOf(QLatin1Char('.'));
         const bool hasExtension = dot > 0 && !item.isNull() && !item.isDir();
         line->setSelection(0, hasExtension ? dot : name.length());
@@ -322,8 +307,7 @@ public:
     }
 
 private:
-    // The index belongs to whichever model the view is on, which is not always
-    // the flat listing. See mapToFlat.
+    // The index belongs to whichever model the view is currently on
     KFileItem itemFor(const QModelIndex &index) const
     {
         return m_model->itemForIndex(mapToFlat(index, m_model->model()));
@@ -336,13 +320,12 @@ private:
     bool m_rowBased = true;
 };
 
-// Shared drag-and-drop plumbing for both views.
+// Shared drag and drop plumbing
 //
-// The drop needs overriding because Qt would hand it to the model, which
-// KDirModel refuses: it has to become a KIO::DropJob for the copy/move/link
-// menu, the progress and the undo entry. dragMoveEvent needs it because the
-// base class only accepts drops over rows advertising themselves as targets,
-// leaving the empty space below the last row rejecting everything.
+// The drop is overridden because Qt would otherwise hand it to the model, which
+// refuses, where it has to become a KIO job, and the drag is overridden because
+// the base class accepts drops only over rows advertising themselves as targets
+// and leaves the empty space rejecting everything
 template <typename Base>
 class DropTarget : public Base {
 public:
@@ -350,8 +333,7 @@ public:
 
     std::function<void(QDropEvent *)> onDrop;
 
-    // Spring-loaded folders: resting on one mid-drag opens it, so files can be
-    // carried several levels down without letting go.
+    // Spring loaded folders, where resting on one during a drag opens it
     std::function<void(const QModelIndex &)> onHoverOpen;
 
 protected:
@@ -364,14 +346,13 @@ protected:
 
     void dragMoveEvent(QDragMoveEvent *event) override
     {
-        // The base call runs first so the drop indicator is still drawn over a
-        // folder row; only the verdict is overridden.
+        // The base call runs first so the drop indicator is still drawn, and
+        // only the verdict is overridden
         Base::dragMoveEvent(event);
         if (!event->isAccepted() && event->mimeData()->hasUrls())
             event->acceptProposedAction();
 
-        // Restarted whenever the cursor crosses onto a different row, so only
-        // resting on one opens it. Empty space stops it outright.
+        // Restarted on every row change, so only resting on one opens it
         const QModelIndex under = Base::indexAt(event->position().toPoint());
         if (under == m_hoverIndex)
             return;
@@ -400,7 +381,7 @@ protected:
     void timerEvent(QTimerEvent *event) override
     {
         if (event->timerId() != m_hoverTimer.timerId()) {
-            // The views run timers of their own (autoscroll, delayed layout).
+            // The views run timers of their own
             Base::timerEvent(event);
             return;
         }
@@ -423,11 +404,8 @@ private:
     QPersistentModelIndex m_hoverIndex;
 };
 
-// The details view, plus the rubber band Win7 has and QTreeView does not:
-// QListView draws its own in icon mode, but the tree has no equivalent, so
-// dragging across the empty space right of the names would do nothing. The
-// band only starts on a press that missed every row, so it cannot compete
-// with dragging an item out.
+// The details view, plus the rubber band a tree lacks, which starts only on a
+// press that missed every row so it cannot compete with dragging an item out
 class DetailsTree : public DropTarget<QTreeView> {
 public:
     using DropTarget<QTreeView>::DropTarget;
@@ -438,8 +416,8 @@ protected:
         if (event->button() == Qt::LeftButton && !indexAt(event->pos()).isValid()) {
             m_banding = true;
             m_origin = event->pos();
-            // A plain drag replaces the selection; Ctrl or Shift adds to it, so
-            // the starting point is remembered and reapplied on every move.
+            // A modifier adds to the selection, so the starting point is
+            // remembered and reapplied on every move
             if (!(event->modifiers() & (Qt::ControlModifier | Qt::ShiftModifier)))
                 clearSelection();
             m_initial = selectionModel()->selection();
@@ -502,29 +480,28 @@ FileView::FileView(DirectoryModel *model, QWidget *parent)
     buildIconView();
 
     m_grouping = new GroupingProxy(m_model, this);
-    // Windows shows groups open, and any rebuild collapses the tree, so they
-    // are reopened every time rather than only when grouping is switched on.
-    // Queued deliberately: a direct connection would run before QTreeView's own
-    // reset handling, which then collapses everything again.
+    // Any rebuild collapses the tree, so the groups are reopened every time,
+    // and queued since a direct connection would run before the view's own
+    // reset handling and be undone by it
     connect(m_grouping, &QAbstractItemModel::modelReset, this, [this] {
         if (grouped())
             m_details->expandAll();
     }, Qt::QueuedConnection);
 
-    // One selection model for both views, so switching modes keeps it.
+    // One selection model for both views, so switching modes keeps it
     rebindSelection();
 
-    // Parented to this rather than a viewport, so it survives the views being
-    // swapped under it, and transparent to the mouse so it eats no clicks.
+    // Parented here rather than to a viewport, so it survives the views being
+    // swapped under it
     m_message = new QLabel(this);
     m_message->setAttribute(Qt::WA_TransparentForMouseEvents);
     m_message->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
-    m_message->setStyleSheet("background: transparent; color: #000000;");
-    Win7::setPointSize(m_message, 9);
+    m_message->setStyleSheet(QStringLiteral("background: transparent; color: %1;")
+                             .arg(QLatin1String(Aero::Palette::Text)));
+    Aero::setPointSize(m_message, 9);
     m_message->hide();
 
-    // Tick-box clicks are caught before the view turns them into an ordinary
-    // selection; see eventFilter.
+    // Tick box clicks are caught before they turn into selections
     m_details->viewport()->installEventFilter(this);
     m_icons->viewport()->installEventFilter(this);
 
@@ -541,8 +518,8 @@ void FileView::buildDetailsView()
     m_details->setDragDropMode(QAbstractItemView::DragDrop);
     m_details->setDefaultDropAction(Qt::MoveAction);
     m_details->setDropIndicatorShown(true);
-    Win7::setPointSize(m_details, 9);
-    Win7::configureListTree(m_details);
+    Aero::setPointSize(m_details, 9);
+    Aero::configureListTree(m_details);
 
     tree->onDrop = [this](QDropEvent *event) {
         const KFileItem item =
@@ -551,8 +528,8 @@ void FileView::buildDetailsView()
                                                                : m_destination);
     };
 
-    // Only folders spring open; a drag resting on a file is heading for the
-    // folder behind it.
+    // Only folders spring open, a drag resting on a file heading for the
+    // folder behind it
     tree->onHoverOpen = [this](const QModelIndex &index) {
         const KFileItem item = itemAtViewIndex(index);
         if (!item.isNull() && item.isDir())
@@ -573,24 +550,22 @@ void FileView::buildDetailsView()
     connect(header, &QHeaderView::customContextMenuRequested,
             this, &FileView::showHeaderMenu);
 
-    // Not QAbstractItemView::activated: that fires on one click or two
-    // depending on the style's activate-on-single-click hint, which is the
-    // desktop's global setting and Folder Options has to override it.
+    // Not the view's own activation, which follows the style's single click
+    // hint, where the folder options have to override it
     bindActivation(m_details);
     connect(m_details, &QTreeView::customContextMenuRequested, this,
             [this](const QPoint &pos) {
         const bool onItem = m_details->indexAt(pos).isValid();
         // A click that missed every row gets the folder's menu, so the
-        // selection is dropped or Properties would report on it instead.
+        // selection is dropped or the properties report on it instead
         if (!onItem)
             m_details->clearSelection();
         Q_EMIT contextMenuRequested(m_details->viewport()->mapToGlobal(pos),
                                     onItem);
     });
 
-    // Thumbnails from the desktop's preview plugins, switched on for the
-    // visible view only (see applyMode): both generators run against the same
-    // KDirModel, so leaving the hidden one on renders every file twice.
+    // On for the visible view only, both generators running against the same
+    // model, so leaving the hidden one on renders every file twice
     m_detailsPreviews = new KFilePreviewGenerator(m_details);
     m_detailsPreviews->setPreviewShown(false);
 
@@ -614,7 +589,7 @@ void FileView::buildIconView()
     m_icons->setResizeMode(QListView::Adjust);
     m_icons->setSelectionRectVisible(true);
     m_icons->setMovement(QListView::Static);
-    Win7::setPointSize(m_icons, 9);
+    Aero::setPointSize(m_icons, 9);
 
     list->onDrop = [this](QDropEvent *event) {
         const KFileItem item =
@@ -623,8 +598,8 @@ void FileView::buildIconView()
                                                                : m_destination);
     };
 
-    // Only folders spring open; a drag resting on a file is heading for the
-    // folder behind it.
+    // Only folders spring open, a drag resting on a file heading for the
+    // folder behind it
     list->onHoverOpen = [this](const QModelIndex &index) {
         const KFileItem item = itemAtViewIndex(index);
         if (!item.isNull() && item.isDir())
@@ -639,8 +614,8 @@ void FileView::buildIconView()
     };
     m_icons->setItemDelegate(delegate);
 
-    // The icon views never show the grouping proxy, but they go through the
-    // same mapping so both paths honour activated()'s contract by construction.
+    // The icon views never show the grouping proxy, but map anyway so both
+    // paths keep the promise by construction
     bindActivation(m_icons);
     connect(m_icons, &QListView::customContextMenuRequested, this,
             [this](const QPoint &pos) {
@@ -661,10 +636,9 @@ void FileView::configureColumns()
 {
     QHeaderView *header = m_details->header();
 
-    // Win7 gives every column a fixed width and leaves the remainder empty.
-    // configureListTree stretches the last section, which suits the Control
-    // Panel's list pages but here would strand the last column's values at the
-    // window edge.
+    // Win7 gives every column a fixed width and leaves the remainder empty,
+    // where the shared setup stretches the last section and would strand its
+    // values at the window edge
     header->setStretchLastSection(false);
 
     int visual = 0;
@@ -674,7 +648,7 @@ void FileView::configureColumns()
             continue;
         header->moveSection(header->visualIndex(logical), visual++);
 
-        // Once only; re-applying would undo the user's dragged widths.
+        // Once only, applying it again undoing the user's dragged widths
         if (!m_sizedColumns.contains(source)) {
             m_details->setColumnWidth(logical, defaultColumnWidth(source));
             m_sizedColumns.insert(source);
@@ -686,9 +660,7 @@ void FileView::showHeaderMenu(const QPoint &pos)
 {
     QMenu menu(this);
 
-    // The column chooser. Name is deliberately absent: every other column
-    // annotates it, and a listing without it is a table of sizes belonging to
-    // nothing.
+    // Name is absent, every other column annotating it
     for (int source : visualColumnOrder()) {
         if (source == DirectoryModel::Name)
             continue;
@@ -697,9 +669,8 @@ void FileView::showHeaderMenu(const QPoint &pos)
         action->setCheckable(true);
         action->setChecked(m_model->isColumnVisible(source));
         connect(action, &QAction::toggled, this, [this, source](bool on) {
-            // Adding or removing a column renumbers everything after it, so the
-            // sort is restated in source terms and reapplied; otherwise the
-            // listing reorders by whatever column inherited the old index.
+            // Adding or removing a column renumbers everything after it, so
+            // the sort is restated in source terms and applied again
             const int sortSource = m_model->sortColumn();
             const Qt::SortOrder order = m_model->sortOrder();
 
@@ -735,17 +706,16 @@ KFileItem FileView::itemAtViewIndex(const QModelIndex &index) const
 
 void FileView::rebindSelection()
 {
-    // Shared so switching modes keeps the selection. Not while grouping is on:
-    // the views are on different models, and a selection model belongs to one.
+    // Not while grouping is on, the views then being on different models and a
+    // selection model belonging to one
     if (!grouped())
         m_icons->setSelectionModel(m_details->selectionModel());
 
     for (QAbstractItemView *view : {static_cast<QAbstractItemView *>(m_details),
                                     static_cast<QAbstractItemView *>(m_icons)}) {
         if (QItemSelectionModel *selection = view->selectionModel()) {
-            // setModel hands the view a fresh selection model but leaves the
-            // old one's connections in place, still reporting selections
-            // nothing can see.
+            // Setting a model hands the view a fresh selection model but
+            // leaves the old one's connections in place
             disconnect(selection, &QItemSelectionModel::selectionChanged,
                        this, &FileView::selectionChanged);
             connect(selection, &QItemSelectionModel::selectionChanged,
@@ -762,8 +732,7 @@ void FileView::setGroupColumn(int sourceColumn)
     const bool enabling = sourceColumn >= 0;
     const bool wasGrouped = grouped();
 
-    // setModel resets the header, and the user's widths should survive turning
-    // grouping on and off.
+    // Setting a model resets the header, and the widths should survive that
     const QByteArray header = m_details->header()->saveState();
 
     m_grouping->setGroupColumn(sourceColumn);
@@ -785,7 +754,7 @@ void FileView::setGroupColumn(int sourceColumn)
 
     if (enabling) {
         m_details->expandAll();
-        // Only the details view can draw groups.
+        // Only the details view can draw groups
         setViewMode(Settings::ViewMode::Details);
     }
 
@@ -803,8 +772,8 @@ void FileView::setViewMode(Settings::ViewMode mode)
     if (m_mode == mode)
         return;
 
-    // The icon views show one level, so they cannot render groups; picking one
-    // drops the grouping rather than hiding every file inside its heading.
+    // The icon views show one level, so picking one drops the grouping rather
+    // than hiding every file inside its heading
     if (mode != Settings::ViewMode::Details && groupColumn() >= 0)
         setGroupColumn(-1);
 
@@ -818,7 +787,7 @@ void FileView::applyMode()
     const int iconSize = Settings::iconSizeFor(m_mode);
     const bool details = (m_mode == Settings::ViewMode::Details);
 
-    // Only the view on show generates previews; see buildDetailsView.
+    // Only the view on show generates previews
     m_detailsPreviews->setPreviewShown(details);
     m_iconPreviews->setPreviewShown(!details);
 
@@ -836,15 +805,13 @@ void FileView::applyMode()
 
     auto *delegate = static_cast<ItemDelegate *>(m_icons->itemDelegate());
 
-    // List and Content are full-width rows, so the box goes at the left; the
-    // grid modes get it in the cell's corner, beside the icon.
+    // Full width rows put the box at the left, the grid modes in the corner
     delegate->setCheckBoxes(m_checkBoxes,
                             m_mode == Settings::ViewMode::List
                                 || m_mode == Settings::ViewMode::Content);
 
     switch (m_mode) {
     case Settings::ViewMode::List:
-        // Small icons in columns filling downwards and wrapping right.
         delegate->setLayout(ItemDelegate::Standard);
         m_icons->setViewMode(QListView::ListMode);
         m_icons->setFlow(QListView::TopToBottom);
@@ -866,8 +833,7 @@ void FileView::applyMode()
         break;
 
     case Settings::ViewMode::Content:
-        // Full-width rows. The grid width is what spans the viewport, so it is
-        // restated on every resize.
+        // The grid width spans the viewport, so it is restated on every resize
         delegate->setLayout(ItemDelegate::Content);
         m_icons->setViewMode(QListView::ListMode);
         m_icons->setFlow(QListView::TopToBottom);
@@ -879,8 +845,7 @@ void FileView::applyMode()
         break;
 
     default:
-        // The four icon sizes. The grid leaves room for two lines of wrapped
-        // name beneath the icon, so long names are not elided to one.
+        // Room for two lines of wrapped name beneath the icon
         delegate->setLayout(ItemDelegate::Standard);
         m_icons->setViewMode(QListView::IconMode);
         m_icons->setFlow(QListView::LeftToRight);
@@ -910,8 +875,7 @@ void FileView::focusView()
 
 void FileView::bindActivation(QAbstractItemView *view)
 {
-    // activated() promises an index into the flat listing, never the grouping
-    // proxy, so every path through here maps first.
+    // Activation promises an index into the flat listing, so map first
     const auto activate = [this](const QModelIndex &index) {
         const QModelIndex flat = mapToFlat(index, m_model->model());
         if (flat.isValid())
@@ -929,8 +893,8 @@ void FileView::bindActivation(QAbstractItemView *view)
             activate(index);
     });
 
-    // Enter opens whatever is current. A view-scoped shortcut rather than a
-    // keyPressEvent override, so neither view class has to know about it.
+    // A shortcut scoped to the view rather than a key handler, so neither view
+    // class has to know about it
     for (const QKeySequence &key : {QKeySequence(Qt::Key_Return),
                                     QKeySequence(Qt::Key_Enter)}) {
         auto *action = new QAction(view);
@@ -948,7 +912,7 @@ void FileView::bindActivation(QAbstractItemView *view)
 void FileView::setSingleClickToOpen(bool single)
 {
     m_singleClick = single;
-    // The pointing hand is what says a single click will do something.
+    // The pointing hand is what says a single click will do something
     const Qt::CursorShape shape = single ? Qt::PointingHandCursor : Qt::ArrowCursor;
     m_details->viewport()->setCursor(shape);
     m_icons->viewport()->setCursor(shape);
@@ -977,17 +941,17 @@ bool FileView::eventFilter(QObject *watched, QEvent *event)
 
     const QPoint pos = mouse->position().toPoint();
     const QModelIndex index = view->indexAt(pos);
-    // Group headings have no box, so their clicks are ordinary ones.
+    // Group headings have no box, so their clicks are ordinary ones
     if (!index.isValid() || itemAtViewIndex(index).isNull())
         return QWidget::eventFilter(watched, event);
 
-    // Both views are given an ItemDelegate at construction and never any other;
-    // it has no Q_OBJECT for qobject_cast to work from.
+    // Both views are given this delegate at construction and never any other,
+    // and it carries no meta object for a checked cast to work from
     auto *delegate = static_cast<ItemDelegate *>(view->itemDelegate());
     if (!delegate->checkRect(view->visualRect(index)).contains(pos))
         return QWidget::eventFilter(watched, event);
 
-    // A tick toggles that row alone, which is what the box is for.
+    // A tick toggles that row alone, which is what the box is for
     const bool selected = view->selectionModel()->isSelected(index);
     view->selectionModel()->select(
         index, (selected ? QItemSelectionModel::Deselect : QItemSelectionModel::Select)
@@ -1012,9 +976,8 @@ QModelIndexList FileView::selectedIndexes() const
     if (view != m_details || !grouped())
         return indexes;
 
-    // DirectoryModel speaks the flat listing's indices, so the grouping is
-    // undone here. Headings map to nothing and drop out, making "select a
-    // heading and press Delete" a no-op rather than a surprise.
+    // Headings map to nothing and drop out, so selecting one and pressing
+    // Delete does nothing rather than surprising anybody
     QModelIndexList mapped;
     mapped.reserve(indexes.size());
     for (const QModelIndex &index : indexes) {
@@ -1044,8 +1007,7 @@ void FileView::renameItem(const QUrl &url)
         return;
 
     QAbstractItemView *view = currentView();
-    // Editing is off by default, so a stray double-click cannot start a rename;
-    // enabled just long enough to open the editor.
+    // Editing is off by default, so a stray double click cannot start a rename
     view->setEditTriggers(QAbstractItemView::AllEditTriggers);
     view->setCurrentIndex(index);
     view->edit(index);
@@ -1086,13 +1048,13 @@ QList<QUrl> FileView::selectUrls(const QList<QUrl> &urls)
             missing.append(url);
     }
 
-    // Nothing listed yet: the existing selection is left alone, so a request
-    // naming a file that never turns up is a no-op rather than a clearing.
+    // The existing selection is left alone, so a request naming a file that
+    // never turns up changes nothing rather than clearing it
     if (found.isEmpty())
         return missing;
 
-    // First and on its own: setting the current index applies the view's own
-    // selection command, which would clear anything already selected.
+    // First and on its own, since setting the current index applies the view's
+    // own selection command and would clear anything already selected
     view->setCurrentIndex(found.first());
     for (const QModelIndex &index : found) {
         selection->select(index, QItemSelectionModel::Select
@@ -1128,12 +1090,11 @@ void FileView::invertSelection()
     if (rows == 0 || columns == 0)
         return;
 
-    // One selection applied in a single call: each select() emits
-    // selectionChanged, so per-row would rebuild the details pane per file.
+    // In one call, since each one reports a change and doing it per row would
+    // rebuild the details pane once per file
     QItemSelection everything;
     if (view == m_details && grouped()) {
-        // The files live under the headings, which are not themselves
-        // selectable, so each group contributes its own range.
+        // The files live under the headings, so each group is its own range
         for (int group = 0; group < rows; ++group) {
             const QModelIndex parent = model->index(group, 0);
             const int children = model->rowCount(parent);
@@ -1159,8 +1120,7 @@ void FileView::setHeaderState(const QByteArray &state)
     if (state.isEmpty())
         return;
     m_details->header()->restoreState(state);
-    // The restored widths must not be overwritten with defaults the next time a
-    // column is switched on.
+    // Or the restored widths go the next time a column is switched on
     for (int source : visualColumnOrder())
         m_sizedColumns.insert(source);
 }
@@ -1177,9 +1137,8 @@ void FileView::repositionMessage()
     if (!m_message || m_message->isHidden())
         return;
 
-    // From the viewport, not the widget: Win7 keeps the column headers visible
-    // over an empty folder and puts the message below them, and the header is
-    // exactly the difference between the two origins.
+    // From the viewport rather than the widget, Win7 keeping the column headers
+    // visible over an empty folder and putting the message below them
     QAbstractItemView *view = currentView();
     const int top = view->viewport()->mapTo(this, QPoint(0, 0)).y() + kMessageTop;
     m_message->setGeometry(0, top, width(), m_message->sizeHint().height());

@@ -24,14 +24,21 @@
 
           commandbar and detailsbar are one column wide in effect: every column
           is identical, so only the vertical profile carries information, and the
-          bottom (resp. top) row is the strip's hairline rule. Both are applied
-          as stylesheet backgrounds in Win7Ui.h.
+          bottom (resp. top) row is the strip's hairline rule. Both are tiled
+          across a strip's background by aero/strips.h.
 
-          The three drive images are the capacity bar, drawn by CapacityBar.h:
+          commandhover and commandpress are the pill behind a command bar button
+          under the cursor and with its menu down: 11x24, three columns of
+          rounded cap at each end and five identical ones between, so they are
+          stretched between caps by Aero::MenuButton rather than scaled whole.
+
+          The three drive images are the capacity bar, drawn by aero/capacitybar.h:
           a 189x13 trough with an 11px fill inside its 1px border, red once the
           drive is nearly full.
         -->
         <file alias="commandbar.png">../../assets/images/commandbar.png</file>
+        <file alias="commandhover.png">../../assets/images/commandhover.png</file>
+        <file alias="commandpress.png">../../assets/images/commandpress.png</file>
         <file alias="detailsbar.png">../../assets/images/detailsbar.png</file>
         <file alias="driveprogressbackground.png">../../assets/images/driveprogressbackground.png</file>
         <file alias="drivefillblue.png">../../assets/images/drivefillblue.png</file>

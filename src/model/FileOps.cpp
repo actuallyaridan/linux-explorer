@@ -34,27 +34,22 @@
 
 namespace {
 
-// The standard KIO delegate, with automatic handling on so errors and
-// overwrite conflicts raise the desktop's usual dialogs.
+// The standard KIO delegate, so conflicts raise the desktop's usual dialogs
 KJobUiDelegate *delegateFor(QWidget *window)
 {
     return KIO::createDefaultJobUiDelegate(KJobUiDelegate::AutoHandlingEnabled, window);
 }
 
-// Attaches the Win7 progress dialog to a job. Reporting only; the job stays
-// KIO's. The jobs are created with HideProgressInfo so they do not also
-// register with the desktop's global tracker and put a second, Plasma-styled
-// indicator on screen for the same operation.
+// Reporting only, the job staying KIO's, and jobs hide their progress info so
+// the desktop's global tracker does not show a second indicator
 void showProgress(KJob *job, QWidget *window,
                   const QString &source, const QString &destination)
 {
-    // Not shown here: the dialog decides for itself when to appear, so a quick
-    // operation never puts a window on screen. It owns its own lifetime.
+    // The dialog decides for itself when to appear and owns its lifetime
     new FileProgressDialog(job, source, destination, window);
 }
 
-// The folder an operation reads from, which is what Win7 names rather than the
-// individual file in flight.
+// Win7 names the folder rather than the file in flight
 QString parentPath(const QList<QUrl> &sources)
 {
     if (sources.isEmpty())
@@ -67,8 +62,7 @@ QString translate(const char *text)
     return QCoreApplication::translate("FileOps", text);
 }
 
-// What to call the thing an operation was working on, in a message with room
-// for one name. Falls back to the location for anything unnamed.
+// For a message with room for one name, falling back to the location
 QString nameOf(const QUrl &url)
 {
     const QString name = url.fileName();
@@ -80,12 +74,9 @@ QString nameOf(const QList<QUrl> &urls)
     return urls.isEmpty() ? QString() : nameOf(urls.first());
 }
 
-// How a failed operation is reported. One case differs: a permission refusal,
-// which Windows reports in its own words and its own dialog. KIO's automatic
-// error box is switched off so the two can never both appear, and everything
-// else is raised here in KIO's own wording.
-//
-// The delegate itself stays; the overwrite and conflict prompts come from it.
+// A permission refusal gets Windows' own wording and dialog and everything else
+// keeps KIO's, so the automatic error box is off to stop the two both appearing
+// while the delegate stays, the conflict prompts coming from it
 void reportFailures(KJob *job, QWidget *window, const QString &title,
                     const QString &subject)
 {
@@ -96,7 +87,7 @@ void reportFailures(KJob *job, QWidget *window, const QString &title,
     QObject::connect(job, &KJob::result, context,
                      [window, title, subject](KJob *finished) {
         const int error = finished->error();
-        // Cancelling is not a failure.
+        // Cancelling is not a failure
         if (error == KJob::NoError || error == KIO::ERR_USER_CANCELED)
             return;
         if (AccessDialogs::isPermissionError(error))
@@ -106,13 +97,9 @@ void reportFailures(KJob *job, QWidget *window, const QString &title,
     });
 }
 
-// KIO's own delete/trash confirmation, which keeps the wording, the file list
-// preview and the "do not ask again" setting consistent with the rest of KDE.
-//
-// The answer arrives asynchronously, so the work to run on confirmation comes
-// in as a continuation rather than a returned bool. One handler per request,
-// deleting itself once answered: sharing one would cross-wire two deletions in
-// flight at the same time.
+// KIO's own delete confirmation, whose answer arrives asynchronously, so the
+// work comes in as a continuation and each request gets a handler that deletes
+// itself once answered, sharing one crossing two deletions in flight
 void confirmThen(const QList<QUrl> &urls, QWidget *window,
                  KIO::AskUserActionInterface::DeletionType type,
                  std::function<void(const QList<QUrl> &)> perform)
@@ -131,9 +118,8 @@ void confirmThen(const QList<QUrl> &urls, QWidget *window,
                            KIO::AskUserActionInterface::DefaultConfirmation, window);
 }
 
-// KFileItem::url() is the canonical location; mostLocalUrl() resolves it to a
-// real path where one exists, which is what applications that cannot speak KIO
-// paste.
+// Resolved to a real path where one exists, which is what applications that
+// cannot speak KIO paste
 void putOnClipboard(const QList<KFileItem> &items, bool cut)
 {
     if (items.isEmpty())
@@ -196,9 +182,8 @@ void moveToTrash(const QList<QUrl> &urls, QWidget *window)
         reportFailures(job, window, translate("Error Deleting File or Folder"),
                        translate("Cannot delete %1.").arg(nameOf(confirmed)));
         showProgress(job, window, parentPath(confirmed), QString());
-        // Not recordCopyJob: a trash job is a move underneath, and recording it
-        // as one would have undo move the files back from wherever the trash
-        // put them instead of going through its own restore.
+        // Not recorded as a copy, or undo moves the files back from wherever
+        // the trash put them instead of going through its own restore
         KIO::FileUndoManager::self()->recordJob(KIO::FileUndoManager::Trash, confirmed,
                                                 QUrl(QStringLiteral("trash:/")), job);
     });
@@ -211,8 +196,7 @@ void deletePermanently(const QList<QUrl> &urls, QWidget *window)
 
     confirmThen(urls, window, KIO::AskUserActionInterface::Delete,
                 [window](const QList<QUrl> &confirmed) {
-        // Not recorded: an Undo entry that cannot restore the files is worse
-        // than none.
+        // An undo entry that cannot restore the files is worse than none
         KIO::DeleteJob *job = KIO::del(confirmed, KIO::HideProgressInfo);
         job->setUiDelegate(delegateFor(window));
         reportFailures(job, window, translate("Error Deleting File or Folder"),
@@ -223,15 +207,13 @@ void deletePermanently(const QList<QUrl> &urls, QWidget *window)
 
 void emptyTrash(QWidget *window)
 {
-    // KIO's own EmptyTrash prompt. It takes no urls: the operation is the whole
-    // trash, not a selection.
+    // KIO's own prompt, which takes no locations
     confirmThen({}, window, KIO::AskUserActionInterface::EmptyTrash,
                 [window](const QList<QUrl> &) {
         KIO::EmptyTrashJob *job = KIO::emptyTrash();
 
-        // emptyTrash() takes no JobFlags, so unlike everything else here it
-        // cannot be created with HideProgressInfo and registers itself with the
-        // desktop's tracker. Unregistering leaves our dialog as the only one.
+        // This job cannot be told to hide its progress, so it registers with
+        // the desktop's tracker and unregistering leaves ours the only dialog
         KIO::getJobTracker()->unregisterJob(job);
 
         job->setUiDelegate(delegateFor(window));
@@ -267,9 +249,8 @@ void renameBatch(const QList<KFileItem> &items, const QString &baseName,
         return;
     }
 
-    // The editor is pre-filled with one file's real name, so an unchanged commit
-    // arrives with that extension still on the end. Each file keeps its own
-    // below, and leaving this one would give every file two.
+    // The editor is prefilled with one file's real name, so an unchanged
+    // commit still carries its extension and every file would end up with two
     QString stem = baseName;
     const QString firstName = items.constFirst().name();
     const int firstDot = firstName.lastIndexOf(QLatin1Char('.'));
@@ -279,8 +260,7 @@ void renameBatch(const QList<KFileItem> &items, const QString &baseName,
             stem.chop(firstSuffix.size());
     }
 
-    // Windows numbers from one, before the extension: three JPEGs renamed to
-    // "Holiday" come out as Holiday (1).jpg, Holiday (2).jpg, Holiday (3).jpg.
+    // Windows numbers from one, before the extension
     int counter = 1;
     for (const KFileItem &item : items) {
         const QString name = item.name();
@@ -300,15 +280,13 @@ void extractArchive(const QUrl &archiveUrl, const QUrl &destination,
     if (!archiveUrl.isValid() || !destination.isValid())
         return;
 
-    // copyAs rather than copy: a plain copy of the archive URL would produce
-    // "Downloads/photos.zip/" as a real directory, where "Extract All" means
-    // the contents land in a folder of the user's choosing.
+    // Copied as the chosen folder, or the contents land in a real directory
+    // named after the archive instead
     KIO::CopyJob *job = KIO::copyAs(archiveUrl, destination, KIO::HideProgressInfo);
     job->setUiDelegate(delegateFor(window));
     reportFailures(job, window,
                    translate("Extract Compressed (Zipped) Folders"),
                    translate("Cannot extract %1.").arg(nameOf(archiveUrl)));
-    // Recorded like any other copy, so a wrong destination is one Ctrl+Z away.
     KIO::FileUndoManager::self()->recordCopyJob(job);
     showProgress(job, window, archiveUrl.toDisplayString(QUrl::PreferLocalFile),
                  destination.toDisplayString(QUrl::PreferLocalFile));
@@ -325,10 +303,9 @@ bool compress(const QList<QUrl> &sources, QWidget *window)
     if (sources.isEmpty() || !canCompress())
         return false;
 
-    // The one operation here that does not go through KIO, whose archive
-    // workers are read-only. Ark is the desktop's archiver and what its own
-    // service menus call; --batch --autofilename is its no-dialog mode, which
-    // names the archive after its contents the way Win7's Send To does.
+    // The one operation not going through KIO, whose archive workers are read
+    // only, and Ark is asked for its dialogless mode, which names the archive
+    // after its contents the way Win7 does
     QStringList arguments{QStringLiteral("--batch"),
                           QStringLiteral("--autofilename"),
                           QStringLiteral("zip")};
@@ -372,8 +349,7 @@ void restoreFromTrash(const QList<QUrl> &urls, QWidget *window)
     if (urls.isEmpty())
         return;
 
-    // No confirmation: restoring undoes a deletion rather than destroying
-    // anything, and Windows does not ask either.
+    // No confirmation, restoring destroying nothing and Windows not asking
     KIO::RestoreJob *job = KIO::restoreFromTrash(urls, KIO::HideProgressInfo);
     job->setUiDelegate(delegateFor(window));
     reportFailures(job, window, translate("Error Restoring File or Folder"),
@@ -403,9 +379,8 @@ void pasteFromClipboard(const QUrl &destination, QWidget *window)
     if (!mimeData || !KIO::canPasteMimeData(mimeData))
         return;
 
-    // File URLs go through copy/move rather than KIO::paste. PasteJob is a
-    // composite that transfers in a subjob and re-emits none of its progress,
-    // so the dialog sat blank for the whole operation. CopyJob reports it all.
+    // Not a paste job, which transfers in a subjob and reports none of its
+    // progress, leaving the dialog blank, where a copy job reports it all
     const QList<QUrl> urls = KUrlMimeData::urlsFromMimeData(mimeData);
     if (!urls.isEmpty()) {
         if (KIO::isClipboardDataCut(mimeData))
@@ -415,9 +390,8 @@ void pasteFromClipboard(const QUrl &destination, QWidget *window)
         return;
     }
 
-    // Anything that is not a file (an image, a block of text) goes through
-    // KIO::paste, which turns it into a new one. Those finish at once, so no
-    // progress costs nothing.
+    // Anything that is not a file is pasted into a new one, and those finish
+    // at once so the missing progress costs nothing
     KIO::PasteJob *job = KIO::paste(mimeData, destination, KIO::HideProgressInfo);
     job->setUiDelegate(delegateFor(window));
     reportFailures(job, window, translate("Error Copying File or Folder"),
@@ -431,15 +405,13 @@ void dropOn(QDropEvent *event, const QUrl &destination, QWidget *window)
 
     KIO::DropJob *job = KIO::drop(event, destination, KIO::HideProgressInfo);
     job->setUiDelegate(delegateFor(window));
-    // A composite job reports its subjob's failure as its own, so watching the
-    // drop catches it. Which of copy, move and link it became is not known
-    // yet, so the message names where the files were going.
+    // Which of copy, move and link this became is not known yet, so the
+    // message names where the files were going
     reportFailures(job, window, translate("Error Copying File or Folder"),
                    translate("Cannot copy to %1.").arg(nameOf(destination)));
 
-    // DropJob reports no progress of its own, like PasteJob: the transfer is a
-    // CopyJob it starts once the user has chosen. Waiting for that subjob is
-    // what lets the dialog show a real percentage. Undo is DropJob's own.
+    // A drop reports no progress of its own, and waiting for the copy job it
+    // starts is what lets the dialog show a real percentage
     QObject::connect(job, &KIO::DropJob::copyJobStarted, window,
                      [window](KIO::CopyJob *copyJob) {
         showProgress(copyJob, window,
@@ -456,9 +428,8 @@ void copyPathToClipboard(const QList<KFileItem> &items)
     QStringList paths;
     paths.reserve(items.size());
     for (const KFileItem &item : items) {
-        // PreferLocalFile so a local file yields /home/you/notes.txt rather than
-        // file:///home/you/notes.txt. Remote locations keep their full URL,
-        // having no path form to prefer.
+        // A local file yields a plain path, and remote locations keep their
+        // full form, having no path to prefer
         paths.append(item.url().toDisplayString(QUrl::PreferLocalFile));
     }
     QApplication::clipboard()->setText(paths.join(QLatin1Char('\n')));
@@ -471,7 +442,7 @@ void openItem(const KFileItem &item, QWidget *window)
 
     auto *job = new KIO::OpenUrlJob(item.url(), item.mimetype());
     job->setUiDelegate(delegateFor(window));
-    job->setShowOpenOrExecuteDialog(true);   // the "run or display?" prompt
+    job->setShowOpenOrExecuteDialog(true);   // the run or display prompt
     job->start();
 }
 
@@ -485,8 +456,7 @@ void openWith(const QList<KFileItem> &items, QWidget *window)
     for (const KFileItem &item : items)
         urls.append(item.url());
 
-    // A launcher job with no service set shows the desktop's own "Open With"
-    // dialog, including its "remember this application" checkbox.
+    // With no application set the desktop shows its own open with dialog
     auto *job = new KIO::ApplicationLauncherJob();
     job->setUrls(urls);
     job->setUiDelegate(delegateFor(window));

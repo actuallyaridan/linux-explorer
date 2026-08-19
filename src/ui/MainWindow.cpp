@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "Assets.h"
 #include "AccessDialogs.h"
 #include "Branding.h"
 #include "ComputerModel.h"
@@ -10,7 +11,7 @@
 #include "Archives.h"
 #include "FileOps.h"
 #include "FileView.h"
-#include "IconHelper.h"
+#include "aero/icons.h"
 #include "Locations.h"
 #include "MapDriveDialog.h"
 #include "MountDialog.h"
@@ -18,7 +19,11 @@
 #include "NavigationPane.h"
 #include "PreviewPane.h"
 #include "Settings.h"
-#include "Win7Ui.h"
+#include "aero/arrows.h"
+#include "aero/buttons.h"
+#include "aero/strips.h"
+#include "aero/text.h"
+#include "aero/artwork.h"
 
 #include <KDirModel>
 #include <KFileItemActions>
@@ -72,46 +77,36 @@
 
 namespace {
 
-// Gap Win7 leaves between the navigation pane and the file list.
+// The gap Win7 leaves between the navigation pane and the file list
 constexpr int kListLeftMargin = 8;
 
-// How long a listing may run before the "Working on it..." page replaces the
-// list. Long enough that ordinary local folders never show it at all.
+// Long enough that ordinary local folders never show the placeholder at all
 constexpr int kLoadingPlaceholderDelay = 400;
 
-// The address bar's fill is driven by a timer rather than by the listing:
-// most directories report no percentage at all, and the ones that do report it
-// late. It creeps to a ceiling, waits there until the folder lists, then runs
-// out to the end. Never indeterminate, which would say the app has no idea
-// what is happening.
+// The address bar's fill runs on a timer rather than on the listing, most
+// directories reporting no progress at all and the rest reporting it late, so
+// it creeps to a ceiling, waits there, then runs out once the folder lands
 constexpr int kProgressCeiling = 80;
 constexpr int kProgressTickInterval = 200;
 constexpr int kProgressTickStep = 1;          // so the ceiling is sixteen seconds off
 
-// How far inside the address box the bar sits: two pixels is the glass entry
-// texture's own frame, a 1px glow over a 1px line.
+// Two pixels is the glass texture's own frame
 constexpr int kPathProgressInset = 2;
 
-// Faded rather than drawn solid: the crumbs have to stay readable across it.
+// Faded rather than solid, the crumbs having to stay readable across it
 constexpr qreal kPathProgressOpacity = 0.5;
 
-// How long the run out to full takes once the folder has listed.
 constexpr int kProgressFinishDuration = 180;
 
-// Windows lets the page settle before the notification strip arrives, then
-// slides it down rather than snapping it into place.
 constexpr int kNotificationDelay = 1000;
 constexpr int kNotificationSlideDuration = 180;
 
-// How many folders a crumb's dropdown lists. A directory with thousands of
-// subfolders would otherwise build a menu taller than the screen.
+// Or a directory with thousands of subfolders builds a menu off the screen
 constexpr int kMaxCrumbMenuEntries = 60;
 
-// How many entries the recent-locations dropdown shows, newest first.
 constexpr int kMaxRecentEntries = 15;
 
-// Every window this process has open, in creation order. Non-owning: windows
-// delete themselves on close (WA_DeleteOnClose).
+// In creation order, and owning nothing, windows deleting themselves on close
 QList<MainWindow *> g_windows;
 
 } // namespace
@@ -126,9 +121,8 @@ MainWindow *MainWindow::openWindow(const QUrl &folder, const QList<QUrl> &select
 {
     const QUrl target = folder.isValid() ? folder : Locations::computer();
 
-    // A window already on that folder is brought forward rather than
-    // duplicated: two reveal requests for the same folder should end up as one
-    // window with both files showing.
+    // Two reveal requests for the same folder should end up as one window with
+    // both files showing
     MainWindow *window = nullptr;
     for (MainWindow *candidate : std::as_const(g_windows)) {
         if (candidate->currentUrl().matches(target, QUrl::StripTrailingSlash)) {
@@ -144,9 +138,8 @@ MainWindow *MainWindow::openWindow(const QUrl &folder, const QList<QUrl> &select
     if (!selection.isEmpty())
         window->selectOnArrival(selection);
 
-    // Raising without the caller's token gets the window stacked on top but
-    // not focused under focus-stealing prevention: it covers what the user was
-    // doing and still will not take their typing.
+    // Without the caller's token the window is stacked on top but left
+    // unfocused, covering what the user was doing and still refusing their keys
     if (!startupId.isEmpty())
         KWindowSystem::setCurrentXdgActivationToken(startupId);
     window->show();
@@ -181,13 +174,11 @@ QPair<QString, QUrl> MainWindow::driveFor(const QString &path) const
         if (path != mount && !path.startsWith(isRoot ? mount : mount + QLatin1Char('/')))
             continue;
 
-        // Longest match wins: /mnt/games sits on its own drive even though /
-        // also contains it, and the nearer mount is the one the file is on.
+        // The longest match wins, the nearer mount being the one it is on
         if (mount.length() > bestLength) {
             bestLength = mount.length();
-            // Never substituted: Windows-friendly mode renames directories, not
-            // drives. The node is appended where Windows puts the drive letter,
-            // so the trail reads "Computer > Data (nvme0n1p1) > ...".
+            // Never substituted, friendly mode renaming directories and not
+            // drives
             label = DriveLabel::forPlace(places, index);
             mountUrl = deviceUrl;
         }
@@ -195,7 +186,7 @@ QPair<QString, QUrl> MainWindow::driveFor(const QString &path) const
 
     if (bestLength < 0) {
         // Nothing in the places model claims this path, which happens before
-        // the model has finished populating.
+        // the model has finished populating
         return {tr("Local Disk"), QUrl::fromLocalFile(QStringLiteral("/"))};
     }
     return {label, mountUrl};
@@ -209,8 +200,7 @@ QList<QPair<QString, QUrl>> MainWindow::crumbsFor(const QUrl &url) const
     if (Locations::isComputer(url))
         return crumbs;
 
-    // Search results hang off the folder that was searched: the whole path,
-    // then "Search Results in Documents" as the last segment.
+    // Search results hang off the folder that was searched
     if (Locations::isSearch(url)) {
         const QUrl folder = Locations::searchFolder(url);
         crumbs = crumbsFor(folder);
@@ -220,8 +210,7 @@ QList<QPair<QString, QUrl>> MainWindow::crumbsFor(const QUrl &url) const
     }
 
     // An archive is browsed at the path of the archive file itself, so the
-    // trail runs through the real folders and continues into it as Windows
-    // does, which is also what makes Up walk back out.
+    // trail runs through the real folders and carries on into it
     if (Archives::isInsideArchive(url)) {
         const QUrl archiveFile = Archives::archiveFileFor(url);
         if (archiveFile.isValid()) {
@@ -230,7 +219,7 @@ QList<QPair<QString, QUrl>> MainWindow::crumbsFor(const QUrl &url) const
             walk.setScheme(url.scheme());
             crumbs.append({archiveFile.fileName(), walk});
 
-            // Whatever is left is the path inside the archive.
+            // Whatever is left is the path inside the archive
             const QString inside = url.path().mid(archiveFile.path().length());
             const QStringList segments =
                 inside.split(QLatin1Char('/'), Qt::SkipEmptyParts);
@@ -243,10 +232,8 @@ QList<QPair<QString, QUrl>> MainWindow::crumbsFor(const QUrl &url) const
     }
 
     // An elevated view is an ordinary path served by a different worker, so it
-    // gets the ordinary trail rather than the single segment the scheme would
-    // produce below. The targets stay elevated: a crumb dropping back to
-    // file:// would quietly take the window's privileges away halfway along
-    // the path. Computer is left alone, not being enterable as administrator.
+    // gets the ordinary trail, and the targets stay elevated since a crumb
+    // dropping back would take the window's privileges away halfway along
     if (url.scheme() == QLatin1String("admin")) {
         QUrl local = url;
         local.setScheme(QStringLiteral("file"));
@@ -259,8 +246,7 @@ QList<QPair<QString, QUrl>> MainWindow::crumbsFor(const QUrl &url) const
     }
 
     if (!url.isLocalFile()) {
-        // Remote and virtual locations (trash:/, smb://...) hang straight off
-        // Computer; there is no drive to place them on.
+        // Remote and virtual locations hang straight off Computer
         crumbs.append({url.scheme() == QLatin1String("trash")
                            ? tr("Recycle Bin") : url.scheme(), url});
         return crumbs;
@@ -268,9 +254,8 @@ QList<QPair<QString, QUrl>> MainWindow::crumbsFor(const QUrl &url) const
 
     const QString path = QDir::cleanPath(url.toLocalFile());
 
-    // Computer, then a drive, then folders. The drive is never skipped, and
-    // home is walked through like any other path rather than collapsed to a
-    // "Home" root of its own.
+    // Computer, then a drive, then folders, and home is walked through like
+    // any other path rather than collapsed to a root of its own
     const QPair<QString, QUrl> drive = driveFor(path);
     crumbs.append(drive);
 
@@ -281,8 +266,7 @@ QList<QPair<QString, QUrl>> MainWindow::crumbsFor(const QUrl &url) const
                                      .split(QLatin1Char('/'), Qt::SkipEmptyParts);
     for (const QString &segment : segments) {
         walk += QLatin1Char('/') + segment;
-        // The label may be rewritten for Windows-friendly naming; the target
-        // stays the real path.
+        // The label may be rewritten for friendly naming, the target never
         const QString mapped = Branding::folderName(walk);
         crumbs.append({mapped.isEmpty() ? segment : mapped,
                        QUrl::fromLocalFile(walk)});
@@ -295,8 +279,8 @@ MainWindow::MainWindow(const QUrl &startUrl, QWidget *parent)
     , m_model(new DirectoryModel(this))
     , m_places(new NavigationPane(this))
 {
-    // Reads its devices from the navigation pane's places model, so the two
-    // always agree about which drives exist.
+    // From the navigation pane's places model, so the two agree about which
+    // drives exist
     m_computerModel = new ComputerModel(m_places->placesModel(), this);
 
     g_windows.append(this);
@@ -312,17 +296,16 @@ MainWindow::MainWindow(const QUrl &startUrl, QWidget *parent)
     buildNavigationBar();
 
     auto *central = new QWidget;
-    // ID-scoped: a declaration-only sheet acts as `* { ... }` and would drag
-    // every descendant, scroll bars included, into the stylesheet engine.
+    // ID scoped, a declaration only sheet matching everything and dragging
+    // every descendant, scroll bars included, into the stylesheet engine
     central->setObjectName("explorerCentral");
-    central->setStyleSheet("#explorerCentral { background: #FFFFFF; }");
+    central->setStyleSheet(Aero::panelSheet(central->objectName(), Aero::Palette::Surface));
 
     auto *root = new QVBoxLayout(central);
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
 
-    // Before the actions and the command bar, both of which refer to the file
-    // view.
+    // Before the actions and the command bar, which both refer to the file view
     QWidget *body = buildBody();
     buildActions();
 
@@ -337,22 +320,20 @@ MainWindow::MainWindow(const QUrl &startUrl, QWidget *parent)
     setCentralWidget(central);
     statusBar()->hide();
 
-    // Hidden until Alt is pressed, unless "Always show menus" says otherwise.
+    // Hidden until Alt is pressed, unless the setting says otherwise
     buildMenuBar();
     menuBar()->setVisible(Settings::alwaysShowMenus());
 
-    // Aero glass on the navigation bar: must come after setCentralWidget, and
-    // the bar must not also be in the central layout — makeInsetWindow places
-    // it in the window frame's glass area itself.
+    // After the central widget is set, and the bar must not also be in that
+    // layout, the inset call placing it in the frame's glass area itself
     setAttribute(Qt::WA_TranslucentBackground, true);
     setAttribute(Qt::WA_NoSystemBackground, true);
     Aero::makeInsetWindow(this, central, m_navBar, nullptr);
 
     setupShortcuts();
 
-    // The whole application rather than this window: the mouse side buttons
-    // should navigate wherever the pointer is, and the file list and
-    // navigation pane consume press events themselves.
+    // The whole application, so the side buttons navigate wherever the pointer
+    // is, the file list and navigation pane consuming presses themselves
     qApp->installEventFilter(this);
 
     connect(m_places, &NavigationPane::urlActivated, this, &MainWindow::navigateTo);
@@ -368,13 +349,12 @@ MainWindow::MainWindow(const QUrl &startUrl, QWidget *parent)
     m_loadingTimer->setSingleShot(true);
     m_loadingTimer->setInterval(kLoadingPlaceholderDelay);
     connect(m_loadingTimer, &QTimer::timeout, this, [this] {
-        // The listing may have finished, or the user moved to Computer, while
-        // the timer was running.
+        // The listing may have finished while the timer was running
         if (!m_loading)
             return;
         if (m_stack->currentWidget() == m_loadingPage)
             m_loadingLabel->show();
-        // Same delay as the placeholder, and for the same reason.
+        // Same delay as the placeholder, and for the same reason
         layoutPathProgress();
         m_pathProgress->show();
     });
@@ -383,59 +363,53 @@ MainWindow::MainWindow(const QUrl &startUrl, QWidget *parent)
         m_loading = true;
         m_lastLoadFailed = false;
 
-        // The page swaps in immediately and only the label waits: leaving the
-        // list up for the delay meant watching KDirLister's batches trickle in
-        // and *then* being replaced by the placeholder. A fast folder now shows
-        // a blank pane too briefly to register.
+        // The page swaps in at once and only the label waits, since leaving the
+        // list up means watching the batches trickle in and only then being
+        // replaced by a placeholder
         m_loadingLabel->hide();
         if (!isComputerView())
             m_stack->setCurrentWidget(m_loadingPage);
         m_loadingTimer->start();
 
-        // Already creeping before the bar is shown, so it arrives part-filled
-        // rather than starting from nothing several hundred milliseconds late.
+        // Already creeping before the bar is shown, so it arrives part filled
         m_pathProgress->hide();
         m_pathProgress->setValue(0);
         m_pathProgressTimer->start();
         updateListMessage();
     });
     connect(m_model, &DirectoryModel::loadingProgress, this, [this](int percent) {
-        // Real progress where there is any, but only forwards: the timer may
-        // have carried the bar past what the lister reports.
+        // Only forwards, the timer possibly having carried the bar past what
+        // the lister reports
         m_pathProgress->setValue(qMax(m_pathProgress->value(), percent));
     });
     connect(m_model, &DirectoryModel::loadingFinished, this, [this] {
         m_loading = false;
         m_loadingTimer->stop();
-        // Runs out to full before hiding, rather than cutting off mid-creep.
+        // Runs out to full before hiding rather than cutting off partway
         finishPathProgress();
         if (m_stack->currentWidget() == m_loadingPage)
             m_stack->setCurrentWidget(m_listPage);
-        // Last chance for a reveal naming something not in this folder.
+        // Last chance for a reveal naming something not in this folder
         applyPendingSelection(true);
         updateDetailsPane();
         updateListMessage();
     });
 
-    // A folder created through the New menu is selected and put into rename
-    // mode, which cannot happen when the job finishes: mkdir returns before the
-    // lister has seen the directory. This waits for it to be listed.
+    // A folder created through the new menu goes into rename mode once listed,
+    // creating one returning before the lister has seen it
     connect(m_model, &DirectoryModel::itemsAdded, this,
             [this] { applyPendingSelection(false); });
 
     // The places model populates asynchronously, so on a cold start the drives
-    // land after Computer has been rendered and summarised; without this the
-    // details pane would sit at "0 items" until the user navigated away.
+    // land after Computer was summarised and the pane would report none
     connect(m_computerModel, &QAbstractItemModel::modelReset, this, [this] {
         if (isComputerView())
             updateDetailsPane();
-        // Connecting a drive removes it from the hidden tally, and the strip
-        // disappears when the last one is mounted.
+        // Connecting a drive removes it from the hidden tally
         updateNotification();
     });
 
-    // Same race: the first trail drawn falls back to a generic drive label,
-    // since no device is known yet. Rebuild it when they arrive.
+    // The same race, the first trail falling back to a generic drive label
     const auto refreshTrail = [this] { setCrumbTrail(currentUrl()); };
     connect(m_places->placesModel(), &QAbstractItemModel::modelReset, this, refreshTrail);
     connect(m_places->placesModel(), &QAbstractItemModel::rowsInserted, this, refreshTrail);
@@ -443,7 +417,7 @@ MainWindow::MainWindow(const QUrl &startUrl, QWidget *parent)
     connect(m_model, &DirectoryModel::errorOccurred, this,
             [this](int error, const QString &message, const QUrl &url) {
         // An unreadable directory never completes, so the placeholder has to
-        // be torn down here too.
+        // be torn down here too
         m_loading = false;
         m_lastLoadFailed = true;
         m_loadingTimer->stop();
@@ -455,8 +429,7 @@ MainWindow::MainWindow(const QUrl &startUrl, QWidget *parent)
         reportListingFailure(error, url);
     });
 
-    // Offered only when there is something to undo, and named after it
-    // ("Undo Copy") so the user knows what it will reverse.
+    // Named after whatever it will reverse
     auto *undoManager = KIO::FileUndoManager::self();
     connect(undoManager, &KIO::FileUndoManager::undoAvailable, this,
             [this](bool available) { m_actUndo->setEnabled(available); });
@@ -465,7 +438,6 @@ MainWindow::MainWindow(const QUrl &startUrl, QWidget *parent)
         m_actUndo->setText(text.isEmpty() ? tr("Undo") : text);
     });
 
-    // What the last session left: window geometry, pane width, columns.
     const QByteArray geometry = Settings::windowGeometry();
     if (!geometry.isEmpty())
         restoreGeometry(geometry);
@@ -475,11 +447,10 @@ MainWindow::MainWindow(const QUrl &startUrl, QWidget *parent)
     m_fileView->setHeaderState(Settings::headerState());
 
     // Options the views hold rather than read, so a fresh window agrees with
-    // the dialog.
+    // the dialog
     m_fileView->setSingleClickToOpen(Settings::singleClickToOpen());
 
-    // Not navigateTo: opening a window is not a navigation, and Win7 plays no
-    // sound for it.
+    // Not a navigation, opening a window not counting as one
     pushHistory(startUrl);
     showLocation(startUrl);
 }
@@ -497,29 +468,26 @@ void MainWindow::closeEvent(QCloseEvent *event)
     QMainWindow::closeEvent(event);
 }
 
-// ---- Commands ---------------------------------------------------------------
-
 void MainWindow::buildActions()
 {
-    // File-operation commands are scoped to the file view, not the window: a
-    // window-wide Delete fires wherever focus is, so pressing it with the
-    // navigation pane focused would trash the selection in the list behind it.
+    // Scoped to the file view rather than the window, a window wide Delete
+    // firing with the navigation pane focused and trashing the list's selection
     const auto fileAction = [this](const QString &text, auto slot,
                                    const QKeySequence &key = {}) {
         auto *action = new QAction(text, m_fileView);
         if (!key.isEmpty()) {
             action->setShortcut(key);
             action->setShortcutContext(Qt::WidgetWithChildrenShortcut);
-            // Parenting only gives ownership; a shortcut is live only once the
-            // action is in some widget's action list.
+            // Parenting only gives ownership, a shortcut being live only once
+            // the action is in some widget's own list
             m_fileView->addAction(action);
         }
         connect(action, &QAction::triggered, this, slot);
         return action;
     };
 
-    // Window-wide commands: about the window rather than the selection, and
-    // meant to work whatever has focus.
+    // About the window rather than the selection, so they work whatever has
+    // the focus
     const auto windowAction = [this](const QString &text, auto slot,
                                      const QKeySequence &key = {}) {
         auto *action = new QAction(text, this);
@@ -561,8 +529,7 @@ void MainWindow::buildActions()
                              QKeySequence(Qt::Key_F2));
     m_actProperties = fileAction(tr("Properties"), [this] {
         const QList<KFileItem> selection = selectedItems();
-        // Win7's Alt+Enter with nothing selected reports on the current folder,
-        // the only way to its properties without leaving it first.
+        // With nothing selected Win7 reports on the current folder
         if (selection.isEmpty()) {
             if (!isComputerView())
                 FileOps::showProperties({KFileItem(operationFolder())}, this);
@@ -604,7 +571,7 @@ void MainWindow::buildActions()
     m_actExtract = windowAction(tr("Extract All..."), &MainWindow::extractSelection);
     m_actOptions = windowAction(tr("Folder and search options"),
                                 &MainWindow::showOptionsDialog);
-    m_actOpenAsAdmin = windowAction(tr("Open as Administrator"),
+    m_actOpenAsAdmin = windowAction(tr("Run as Administrator"),
                                     &MainWindow::openAsAdministrator);
 
     m_actPreviewPane = windowAction(tr("Preview pane"), [this](bool on) {
@@ -636,7 +603,7 @@ void MainWindow::buildActions()
     m_actUseCheckBoxes->setCheckable(true);
     m_actUseCheckBoxes->setChecked(Settings::useCheckBoxes());
 
-    // The eight view modes, in Win7's own order, on Win7's own shortcuts.
+    // In Win7's own order, on Win7's own shortcuts
     m_viewModeGroup = new QActionGroup(this);
     const std::pair<const char *, Settings::ViewMode> modes[] = {
         {QT_TR_NOOP("Extra large icons"), Settings::ViewMode::ExtraLargeIcons},
@@ -661,7 +628,6 @@ void MainWindow::buildActions()
         ++index;
     }
 
-    // Sorting, by the four columns Win7 offers in its Sort by menu.
     m_sortGroup = new QActionGroup(this);
     const std::pair<const char *, int> sorts[] = {
         {QT_TR_NOOP("Name"),          DirectoryModel::Name},
@@ -679,8 +645,8 @@ void MainWindow::buildActions()
         m_sortGroup->addAction(action);
     }
 
-    // Grouping, over the same four columns plus "(None)". Separate from the
-    // sort actions: a listing can be grouped by type and sorted by date.
+    // Separate from the sort actions, a listing being able to group by type
+    // and sort by date at once
     m_groupGroup = new QActionGroup(this);
     const std::pair<const char *, int> groups[] = {
         {QT_TR_NOOP("(None)"),        -1},
@@ -714,14 +680,13 @@ void MainWindow::buildActions()
         m_fileView->sortBy(m_model->sortColumn(), Qt::DescendingOrder);
     });
 
-    // Win7's "New" submenu. KNewFileMenu supplies the folder command, the
-    // document templates, and the naming dialog with its "New folder (2)"
-    // uniquing.
+    // The desktop's own menu supplies the folder command, the templates and
+    // the naming dialog that avoids collisions
     m_newFileMenu = new KNewFileMenu(this);
     m_newFileMenu->setParentWidget(this);
     m_newFileMenu->setText(tr("New"));
     const auto rememberCreated = [this](const QUrl &url) {
-        // Selected and renamed once the lister sees it; see itemsAdded.
+        // Selected and renamed once the lister sees it
         m_pendingSelection = {url};
         m_pendingRename = true;
     };
@@ -805,15 +770,14 @@ void MainWindow::buildMenuBar()
     });
 
     QMenu *help = bar->addMenu(tr("&Help"));
-    // The same dialog the command bar's Help button opens.
     help->addAction(tr("About Explorer"), this,
                     &MainWindow::showAboutDialog);
 }
 
 void MainWindow::setupShortcuts()
 {
-    // Shortcuts with no menu entry of their own. All window-wide: these are
-    // about where the keyboard and the window go, not about the selection.
+    // Shortcuts with no menu entry of their own, all of them window wide since
+    // they are about where the keyboard goes rather than the selection
     const auto add = [this](const QList<QKeySequence> &keys, auto slot) {
         auto *action = new QAction(this);
         action->setShortcuts(keys);
@@ -822,9 +786,9 @@ void MainWindow::setupShortcuts()
         return action;
     };
 
-    // Alt+Left and Alt+Right, plus Backspace for Back, which Qt's standard
-    // sequence omits on X11 and Wayland. Safe window-wide: a focused line edit
-    // claims Backspace through a shortcut override before this sees it.
+    // Backspace for back is added because Qt's standard sequence omits it here,
+    // and a focused text field claims it first through an override, so binding
+    // it window wide is safe
     add({QKeySequence(QKeySequence::Back), QKeySequence(Qt::Key_Backspace)},
         [this] { goBack(); });
     add({QKeySequence(QKeySequence::Forward)}, [this] { goForward(); });
@@ -832,12 +796,11 @@ void MainWindow::setupShortcuts()
     add({QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_N)},
         &MainWindow::createNewFolder);
 
-    // The address bar. F4 is the one that also drops the history.
+    // One of these also drops the history
     add({QKeySequence(Qt::CTRL | Qt::Key_L), QKeySequence(Qt::ALT | Qt::Key_D)},
         [this] { focusPathEdit(false); });
     add({QKeySequence(Qt::Key_F4)}, [this] { focusPathEdit(true); });
 
-    // The search box, on all three keys Win7 answers.
     add({QKeySequence(Qt::CTRL | Qt::Key_E), QKeySequence(Qt::CTRL | Qt::Key_F),
          QKeySequence(Qt::Key_F3)},
         &MainWindow::focusSearchBox);
@@ -846,9 +809,8 @@ void MainWindow::setupShortcuts()
     add({QKeySequence(Qt::SHIFT | Qt::Key_F6)}, [this] { cyclePanes(false); });
 
     add({QKeySequence(Qt::Key_F11)}, [this] {
-        // Going full screen takes the window frame, and with it the glass area
-        // the navigation bar sits in; Qt reparents the inset content back into
-        // the window, so nothing has to take the bar down by hand.
+        // Going full screen takes the frame and its glass area with it, and Qt
+        // reparents the inset content back so nothing has to be undone here
         if (isFullScreen())
             showNormal();
         else
@@ -858,7 +820,7 @@ void MainWindow::setupShortcuts()
 
 void MainWindow::focusPathEdit(bool dropHistory)
 {
-    // Already editing: Win7 re-selects rather than doing nothing.
+    // Already editing, where Win7 selects again rather than doing nothing
     if (m_pathEdit) {
         m_pathEdit->setFocus();
         m_pathEdit->selectAll();
@@ -887,10 +849,10 @@ void MainWindow::showPathHistoryMenu()
         });
     }
 
-    // Under the address box and the same width, the way Win7 drops it.
+    // Under the address box and the same width, the way Win7 drops it
     menu.setMinimumWidth(m_pathBox->width());
-    // The editor keeps the keyboard: a menu takes focus with PopupFocusReason,
-    // which the event filter deliberately does not treat as clicking away.
+    // The editor keeps the keyboard, a menu taking focus for a reason the
+    // event filter does not treat as clicking away
     menu.exec(m_pathBox->mapToGlobal(QPoint(0, m_pathBox->height())));
 }
 
@@ -904,8 +866,8 @@ void MainWindow::focusSearchBox()
 
 void MainWindow::cyclePanes(bool forward)
 {
-    // The four stops, in Win7's order. The address bar is entered by starting
-    // an edit, the only way it can hold the keyboard.
+    // In Win7's order, and the address bar is entered by starting an edit, the
+    // only way it can hold the keyboard
     enum Pane { NavigationPaneStop, AddressStop, ListStop, SearchStop, StopCount };
 
     QWidget *focus = qApp->focusWidget();
@@ -917,8 +879,8 @@ void MainWindow::cyclePanes(bool forward)
     else if (focus && m_places->isAncestorOf(focus))
         current = NavigationPaneStop;
 
-    // Skips stops that cannot take the keyboard, so F6 on the Computer page
-    // steps past the search box rather than appearing to do nothing.
+    // Skips stops that cannot take the keyboard, so on the Computer page this
+    // steps past the search box rather than appearing to do nothing
     for (int step = 1; step < StopCount; ++step) {
         const int next = (current + (forward ? step : StopCount - step)) % StopCount;
         switch (next) {
@@ -947,8 +909,6 @@ void MainWindow::cyclePanes(bool forward)
     }
 }
 
-// ---- Chrome -----------------------------------------------------------------
-
 void MainWindow::buildNavigationBar()
 {
     m_navBar = new QWidget;
@@ -957,9 +917,8 @@ void MainWindow::buildNavigationBar()
     layout->setContentsMargins(4, 3, 6, 3);
     layout->setSpacing(2);
 
-    // No background anywhere on this bar: makeInsetWindow marks it
-    // _Aero_transpbg and AeroQt paints its children against the window's
-    // glass, which a colour of our own would cover.
+    // No background at all, the inset call marking this bar transparent so the
+    // theme paints its children against the window's glass
     auto *navBtns = new Aero::NavButtons(m_navBar);
     m_backBtn = navBtns->back();
     m_forwardBtn = navBtns->forward();
@@ -969,9 +928,8 @@ void MainWindow::buildNavigationBar()
     connect(m_forwardBtn, &QPushButton::clicked, this, &MainWindow::goForward);
     layout->addWidget(navBtns);
 
-    // Win7's recent-locations dropdown: this window's history, for hopping
-    // back several steps at once. NavButtons reserves the slot and paints the
-    // arrow; setMenu() is what makes the button appear (hidden while null).
+    // The chrome reserves the slot and paints the arrow, and giving it a menu
+    // is what makes the button appear, it being hidden until then
     auto *recentMenu = new QMenu(navBtns);
     connect(recentMenu, &QMenu::aboutToShow, this, [this, recentMenu] {
         recentMenu->clear();
@@ -984,8 +942,8 @@ void MainWindow::buildNavigationBar()
             action->setCheckable(true);
             action->setChecked(i == m_historyIndex);
             connect(action, &QAction::triggered, this, [this, i] {
-                // Moves the cursor within the history rather than pushing an
-                // entry, so Forward can still return.
+                // Moves within the history rather than pushing an entry, so
+                // forward can still return
                 if (i < 0 || i >= m_history.size())
                     return;
                 m_historyIndex = i;
@@ -995,13 +953,13 @@ void MainWindow::buildNavigationBar()
             });
         }
     });
-    // Takes a non-const reference, so the menu needs to be an lvalue.
+    // Taken by reference, so the menu has to be a named variable
     navBtns->setMenu(recentMenu);
     navBtns->menuButton()->setToolTip(tr("Recent locations"));
     layout->addSpacing(4);
 
-    // Icon plus crumb trail, on AeroQt's glass-entry texture so the box matches
-    // the search field. Scoped with #addressBox so child labels are unaffected.
+    // On the theme's glass texture so the box matches the search field, and
+    // scoped by name so the child labels are unaffected
     m_pathBox = new QWidget;
     m_pathBox->setObjectName("addressBox");
     m_pathBox->setStyleSheet(
@@ -1009,30 +967,27 @@ void MainWindow::buildNavigationBar()
         "#addressBox:hover { border-image: url(:/AeroQt/transpbg/entry/hover.png) 4 4 4 4 repeat; }"
     );
     m_pathBox->setFixedHeight(24);
-    // Clicking the bar's empty space starts editing the path.
+    // Clicking the bar's empty space starts editing the path
     m_pathBox->setCursor(Qt::IBeamCursor);
     m_pathLayout = new QHBoxLayout(m_pathBox);
     m_pathLayout->setContentsMargins(4, 0, 4, 0);
     m_pathLayout->setSpacing(4);
 
-    // Win7 fills the address bar itself while listing, so the bar goes inside
-    // the box rather than in the layout: positioned by hand and lowered behind
-    // the crumbs, which have no background and so read straight over it.
+    // Inside the box rather than in the layout, positioned by hand and lowered
+    // behind the crumbs, which have no background and read straight over it
     m_pathProgress = new QProgressBar(m_pathBox);
     m_pathProgress->setRange(0, 100);
     m_pathProgress->setTextVisible(false);
-    // The box's press handler starts the path edit; a child taking the click
-    // would leave a dead strip across the middle of the bar.
+    // A child taking the click would leave a dead strip across the bar
     m_pathProgress->setAttribute(Qt::WA_TransparentForMouseEvents);
     // An effect rather than colours of its own, so the bar stays the real
-    // style's rather than a stylesheet imitation of it.
+    // style's rather than an imitation of it
     auto *fade = new QGraphicsOpacityEffect(m_pathProgress);
     fade->setOpacity(kPathProgressOpacity);
     m_pathProgress->setGraphicsEffect(fade);
     m_pathProgress->hide();
     m_pathProgress->lower();
 
-    // Drives the fill while a listing runs; see kProgressCeiling.
     m_pathProgressTimer = new QTimer(this);
     m_pathProgressTimer->setInterval(kProgressTickInterval);
     connect(m_pathProgressTimer, &QTimer::timeout, this, [this] {
@@ -1041,9 +996,8 @@ void MainWindow::buildNavigationBar()
             m_pathProgress->setValue(qMin(value + kProgressTickStep, kProgressCeiling));
     });
 
-    // The run out to full when the listing lands. One animation rather than one
-    // per finish, so a folder abandoned mid-load can stop the previous run
-    // instead of letting it write into the next folder's bar.
+    // One animation rather than one per finish, so a folder abandoned partway
+    // can stop the previous run instead of it writing into the next bar
     m_pathProgressFill = new QPropertyAnimation(m_pathProgress, "value", this);
     m_pathProgressFill->setDuration(kProgressFinishDuration);
     m_pathProgressFill->setEndValue(100);
@@ -1053,24 +1007,21 @@ void MainWindow::buildNavigationBar()
     layout->addWidget(m_pathBox, 1);
     layout->addSpacing(6);
 
-    // The crumb bar carries _Aero_transpbg=true from makeInsetWindow, so AeroQt
-    // gives plain QLineEdits a translucent glass background that brightens on
-    // hover; setting our own border/background would override that
-    // border-image. Focus swaps to a solid white field, AeroQt having no
-    // focus-state glass image.
+    // The crumb bar is marked transparent by the inset call, so the theme gives
+    // a plain text field a glass background that a border of our own would
+    // override, and focus swaps to solid white since there is no glass for it
     m_searchBox = new QLineEdit;
     m_searchBox->setPlaceholderText(tr("Search"));
     m_searchBox->setFixedWidth(190);
     m_searchBox->setFixedHeight(24);
     m_searchBox->setClearButtonEnabled(false);
-    // gtk-search first: AeroThemePlasma carries the Win7 glyph under that name,
-    // system-search is the freedesktop fallback.
-    m_searchBox->addAction(themeIcon({"gtk-search", "system-search"}),
+    // The Win7 glyph comes first, with the standard name as the fallback
+    m_searchBox->addAction(Aero::themeIcon({"gtk-search", "system-search"}),
                            QLineEdit::TrailingPosition);
     m_searchBox->setToolTip(tr("Filters this folder as you type. Press Enter to "
                                "search subfolders as well."));
 
-    // Italic only while the placeholder shows; upright once the user types.
+    // Italic only while the placeholder shows
     connect(m_searchBox, &QLineEdit::textChanged, m_searchBox,
             [this](const QString &text) {
         QFont f = m_searchBox->font();
@@ -1085,9 +1036,11 @@ void MainWindow::buildNavigationBar()
             [this](QWidget *, QWidget *now) {
         if (now == m_searchBox) {
             m_searchBox->setStyleSheet(
-                "QLineEdit { border: 1px solid #7EB4EA; border-radius: 2px;"
-                " background: #FFFFFF; color: #000000; }"
-            );
+                QStringLiteral("QLineEdit { border: 1px solid %1; border-radius: 2px;"
+                               " background: %2; color: %3; }")
+                    .arg(QLatin1String(Aero::Palette::FocusBorder),
+                         QLatin1String(Aero::Palette::Surface),
+                         QLatin1String(Aero::Palette::Text)));
         } else {
             m_searchBox->setStyleSheet(QString());   // back to AeroQt's glass
         }
@@ -1105,8 +1058,7 @@ void MainWindow::buildNavigationBar()
 
 void MainWindow::finishPathProgress()
 {
-    // Never shown: the folder listed inside the delay, so there is nothing to
-    // run out.
+    // Never shown, the folder having listed inside the delay
     if (!m_pathProgress->isVisible()) {
         stopPathProgress();
         return;
@@ -1121,8 +1073,7 @@ void MainWindow::stopPathProgress()
     m_pathProgressFill->stop();
     m_pathProgressTimer->stop();
     m_pathProgress->hide();
-    // Emptied on the way out, so the next folder cannot briefly show the last
-    // one's fill.
+    // Emptied on the way out, or the next folder shows the last one's fill
     m_pathProgress->setValue(0);
 }
 
@@ -1139,32 +1090,31 @@ void MainWindow::layoutPathProgress()
 QIcon MainWindow::locationIcon(const QUrl &url) const
 {
     if (Locations::isComputer(url))
-        return themeIcon({"computer", "computer-laptop"});
+        return Aero::themeIcon({"computer", "computer-laptop"});
     if (Locations::isSearch(url))
-        return themeIcon({"system-search", "folder-saved-search"});
+        return Aero::themeIcon({"system-search", "folder-saved-search"});
 
-    // Prefer the places entry so Downloads and Music get the navigation pane's
-    // glyph. closestItem also matches ancestors, hence the exact-url check.
+    // Prefer the places entry so the glyphs match the pane's, and the lookup
+    // matches ancestors too, hence checking the location itself
     KFilePlacesModel *places = m_places->placesModel();
     const QModelIndex index = places->closestItem(url);
     if (index.isValid() && places->url(index).matches(url, QUrl::StripTrailingSlash))
         return places->icon(index);
 
-    return QIcon::fromTheme(KIO::iconNameForUrl(url), themeIcon({"folder"}));
+    return QIcon::fromTheme(KIO::iconNameForUrl(url), Aero::themeIcon({"folder"}));
 }
 
 void MainWindow::clearPathLayout()
 {
     while (QLayoutItem *item = m_pathLayout->takeAt(0)) {
         if (QWidget *w = item->widget()) {
-            m_crumbLinks.remove(w);
             m_crumbArrows.remove(w);
             w->deleteLater();
         }
         delete item;
     }
     // Cleared before the deferred deletes run, so anything reacting to the
-    // editor losing focus sees edit mode as already finished.
+    // editor losing focus sees edit mode as already finished
     m_pathEdit = nullptr;
 }
 
@@ -1176,24 +1126,23 @@ void MainWindow::beginPathEdit()
     const QUrl url = currentUrl();
     clearPathLayout();
 
-    // An elevated location edits as the plain path it is; admin:/// is
-    // plumbing, not something to hand the user to type around. What they type
-    // goes back through the same worker below.
+    // An elevated location edits as the plain path it is, and what the user
+    // types goes back through the same worker below
     const bool elevated = url.scheme() == QLatin1String("admin");
     m_pathEdit = new QLineEdit(url.isLocalFile() || elevated
                                    ? displayPath(url)
                                    : url.toString());
     m_pathEdit->setFrame(false);
-    Win7::setPointSize(m_pathEdit, 9);
-    // Transparent so #addressBox's glass texture still shows through: the
-    // editor should look like the bar, not sit inside it.
+    Aero::setPointSize(m_pathEdit, 9);
+    // Transparent, so the editor looks like the bar rather than sits inside it
     m_pathEdit->setStyleSheet(
-        "QLineEdit { background: transparent; border: none; color: #000000; }");
+        QStringLiteral("QLineEdit { background: transparent; border: none;"
+                       " color: %1; }").arg(QLatin1String(Aero::Palette::Text)));
     m_pathLayout->addWidget(m_pathEdit);
 
-    // QFileSystemModel rather than KUrlCompletion: the completer needs a model
-    // to pop up from, and this one only reads a directory once the text
-    // reaches it.
+    // A filesystem model rather than a completion object, the completer needing
+    // a model to pop up from and this one reading a directory only when the
+    // typed text reaches it
     auto *fsModel = new QFileSystemModel(m_pathEdit);
     fsModel->setRootPath(QStringLiteral("/"));
     fsModel->setFilter(QDir::Dirs | QDir::Drives | QDir::NoDotAndDotDot);
@@ -1214,12 +1163,11 @@ void MainWindow::beginPathEdit()
         QUrl target = QUrl::fromUserInput(text, QDir::homePath(),
                                           QUrl::AssumeLocalFile);
 
-        // Checked before moving: a nonexistent path would still push a history
-        // entry and leave the window showing an empty folder.
+        // Or a nonexistent path pushes a history entry and shows nothing at all
         if (target.isLocalFile()) {
             const QFileInfo info(target.toLocalFile());
             if (info.isFile()) {
-                // A file rather than a folder: Win7 opens it and stays put.
+                // A file rather than a folder, which Win7 opens and stays put
                 endPathEdit();
                 FileOps::openItem(KFileItem(target), this);
                 return;
@@ -1232,19 +1180,17 @@ void MainWindow::beginPathEdit()
             }
         }
 
-        // Only paths that survived the checks go into the history, so F4's
-        // dropdown lists places that exist rather than every typo. Recorded as
-        // typed: the elevation belongs to the window, not the location.
+        // Only paths that survived the checks, so the dropdown lists places
+        // that exist, and recorded as typed since elevation is the window's
         if (target.isValid())
             Settings::addRecentPath(text);
 
-        // A path typed into an elevated window stays elevated, as its crumbs
-        // do: the window is what runs as administrator, not the folder.
+        // A path typed into an elevated window stays elevated, as its crumbs do
         if (target.isLocalFile() && currentUrl().scheme() == QLatin1String("admin"))
             target.setScheme(QStringLiteral("admin"));
 
-        // navigateTo rebuilds the trail, destroying the editor; when it
-        // declines to move, the trail has to be put back by hand.
+        // Navigating rebuilds the trail and destroys the editor, so when it
+        // declines to move the trail has to be put back by hand
         if (target.isValid() && !target.matches(currentUrl(), QUrl::StripTrailingSlash))
             navigateTo(target);
         else
@@ -1266,14 +1212,15 @@ void MainWindow::setCrumbTrail(const QUrl &url)
 {
     clearPathLayout();
 
-    // Each arrow drops down the children of the crumb to its left, so it is
-    // registered with that crumb's URL. The first one, beside the location
-    // icon, has no crumb to its left and lists the places instead.
+    // Each arrow drops the children of the crumb to its left, so it is
+    // registered against that crumb, and the first one lists the places instead
     const auto addArrow = [this](const QUrl &parent) {
-        QLabel *arrow = Win7::arrowLabel(Qt::RightArrow, QColor(0x66, 0x66, 0x66), 6);
-        arrow->setCursor(Qt::PointingHandCursor);
-        arrow->installEventFilter(this);
+        auto *arrow = new Aero::LinkLabel;
+        arrow->setPixmap(Aero::arrowPixmap(Qt::RightArrow,
+                                           Aero::Palette::rgb(Aero::Palette::CrumbArrow), 6));
         m_crumbArrows.insert(arrow, parent);
+        connect(arrow, &Aero::LinkLabel::clicked, this,
+                [this, arrow] { showCrumbMenu(arrow); });
         m_pathLayout->addWidget(arrow);
     };
 
@@ -1282,25 +1229,24 @@ void MainWindow::setCrumbTrail(const QUrl &url)
     m_pathLayout->addWidget(icon);
     addArrow(QUrl());
 
-    // Intermediate segments are clickable links; the last segment is plain text.
+    // Intermediate segments are links and the last is plain text
     const QList<QPair<QString, QUrl>> crumbs = crumbsFor(url);
     for (int i = 0; i < crumbs.size(); ++i) {
         if (i > 0)
             addArrow(crumbs.at(i - 1).second);
 
-        auto *label = new QLabel(crumbs.at(i).first);
         if (i == crumbs.size() - 1) {
-            label->setStyleSheet("color: #000000;");
-        } else {
-            label->setCursor(Qt::PointingHandCursor);
-            label->setStyleSheet(
-                "QLabel { color: #000000; }"
-                "QLabel:hover { color: #003399; }"
-            );
-            label->installEventFilter(this);
-            m_crumbLinks.insert(label, crumbs.at(i).second);
+            m_pathLayout->addWidget(Aero::label(crumbs.at(i).first));
+            continue;
         }
-        m_pathLayout->addWidget(label);
+
+        auto *link = new Aero::LinkLabel(crumbs.at(i).first);
+        link->setColors(Aero::Palette::Text, Aero::Palette::CrumbHover);
+        link->setUnderlineOnHover(true);
+        const QUrl target = crumbs.at(i).second;
+        connect(link, &Aero::LinkLabel::clicked, this,
+                [this, target] { navigateTo(target); });
+        m_pathLayout->addWidget(link);
     }
 
     m_pathLayout->addStretch();
@@ -1312,9 +1258,8 @@ void MainWindow::showCrumbMenu(QLabel *arrow)
     QMenu menu(this);
 
     if (!parent.isValid()) {
-        // The leading arrow: the places, standing in for Win7's
-        // Desktop/Libraries/Computer list.
-        menu.addAction(themeIcon({"computer", "computer-laptop"}), tr("Computer"),
+        // The leading arrow lists the places
+        menu.addAction(Aero::themeIcon({"computer", "computer-laptop"}), tr("Computer"),
                        this, [this] { navigateTo(Locations::computer()); });
         menu.addSeparator();
         KFilePlacesModel *places = m_places->placesModel();
@@ -1342,7 +1287,7 @@ void MainWindow::showCrumbMenu(QLabel *arrow)
                       | (m_model->showHiddenFiles() ? QDir::Hidden : QDir::Filter(0)));
         dir.setSorting(QDir::Name | QDir::LocaleAware | QDir::IgnoreCase);
 
-        const QIcon folderIcon = themeIcon({"folder"});
+        const QIcon folderIcon = Aero::themeIcon({"folder"});
         const QFileInfoList entries = dir.entryInfoList();
         const QString here = QDir::cleanPath(currentUrl().toLocalFile());
         int shown = 0;
@@ -1357,9 +1302,8 @@ void MainWindow::showCrumbMenu(QLabel *arrow)
             QAction *action = menu.addAction(
                 folderIcon, Branding::displayName(url, entry.fileName()), this,
                 [this, url] { navigateTo(url); });
-            // The folder already in the trail is ticked. Compared a whole
-            // segment at a time: a bare string prefix would tick "Doc"
-            // whenever you were anywhere under "Documents".
+            // A whole segment at a time, since a bare prefix would tick a
+            // folder whenever you were anywhere under a longer name
             const QString candidate = QDir::cleanPath(entry.absoluteFilePath());
             action->setCheckable(true);
             action->setChecked(here == candidate
@@ -1374,9 +1318,10 @@ void MainWindow::showCrumbMenu(QLabel *arrow)
 
 QWidget *MainWindow::buildCommandBar()
 {
-    QFrame *bar = Win7::commandBar(&m_commandLayout);
+    Aero::Strip *bar = Aero::commandBar(Explorer::Art::CommandBar);
+    m_commandLayout = bar->row();
 
-    auto *organize = new Win7::MenuButton(tr("Organize"));
+    auto *organize = new Aero::MenuButton(tr("Organize"));
     auto *menu = new QMenu(organize);
     menu->addAction(m_actCut);
     menu->addAction(m_actCopy);
@@ -1415,9 +1360,8 @@ QWidget *MainWindow::buildCommandBar()
         detailsPaneAction->setChecked(m_details->isVisible());
     });
 
-    // A command rather than a submenu: several of the settings are radio
-    // choices, two depend on each other, and none should take effect until the
-    // user says so, which a menu of checkable actions cannot express.
+    // A command rather than a submenu, some settings being radio choices, two
+    // depending on each other, and none taking effect until the user says so
     menu->addAction(m_actOptions);
 
     menu->addSeparator();
@@ -1426,8 +1370,7 @@ QWidget *MainWindow::buildCommandBar()
     organize->setMenu(menu);
     m_commandLayout->addWidget(organize);
 
-    // New Folder plus whatever document templates are installed.
-    auto *newButton = new Win7::MenuButton(tr("New"));
+    auto *newButton = new Aero::MenuButton(tr("New"));
     auto *newMenu = new QMenu(newButton);
     newMenu->addAction(m_newFileMenu);
     connect(newMenu, &QMenu::aboutToShow, this, [this] {
@@ -1439,13 +1382,13 @@ QWidget *MainWindow::buildCommandBar()
 
     m_commandLayout->addStretch(1);
 
-    // Shares the View menu's actions, so the two cannot drift apart.
+    // Shares the view menu's actions, so the two cannot drift apart
     auto *viewButton = new QToolButton;
     viewButton->setPopupMode(QToolButton::InstantPopup);
     viewButton->setCursor(Qt::PointingHandCursor);
     viewButton->setStyleSheet("QToolButton { border: none; background: transparent; }"
                               "QToolButton::menu-indicator { image: none; }");
-    viewButton->setIcon(themeIcon({"view-list-details", "view-list-text", "view-choose"}));
+    viewButton->setIcon(Aero::themeIcon({"view-list-details", "view-list-text", "view-choose"}));
     viewButton->setToolTip(tr("Change your view"));
     auto *viewMenu = new QMenu(viewButton);
     for (QAction *action : m_viewModeGroup->actions())
@@ -1456,7 +1399,7 @@ QWidget *MainWindow::buildCommandBar()
     auto *helpButton = new QToolButton;
     helpButton->setCursor(Qt::PointingHandCursor);
     helpButton->setStyleSheet("QToolButton { border: none; background: transparent; }");
-    helpButton->setIcon(themeIcon({"help-contents", "help-browser", "system-help"}));
+    helpButton->setIcon(Aero::themeIcon({"help-contents", "help-browser", "system-help"}));
     helpButton->setToolTip(tr("Help"));
     helpButton->setShortcut(QKeySequence(Qt::Key_F1));
     connect(helpButton, &QToolButton::clicked, this, &MainWindow::showAboutDialog);
@@ -1467,12 +1410,11 @@ QWidget *MainWindow::buildCommandBar()
 
 void MainWindow::rebuildContextualCommands()
 {
-    // Win7's command bar changes with the selection. Rebuilt rather than shown
-    // and hidden, since which buttons belong there depends on what is selected.
+    // Rebuilt rather than shown and hidden, which buttons belong here depending
+    // on what is selected
     for (QWidget *widget : std::as_const(m_contextualCommands)) {
-        // Removed at once, not just scheduled for deletion: deleteLater leaves
-        // the widget in the layout, so the insert position below would count
-        // buttons on their way out and walk the new ones ever further right.
+        // Removed at once, a deferred delete leaving the widget in the layout
+        // so the insert position below would count buttons on their way out
         m_commandLayout->removeWidget(widget);
         widget->hide();
         widget->deleteLater();
@@ -1482,11 +1424,11 @@ void MainWindow::rebuildContextualCommands()
     if (!m_commandLayout)
         return;
 
-    // Before the stretch, always third from last (stretch, view, help).
+    // Before the stretch, always third from last
     const int insertAt = m_commandLayout->count() - 3;
     const auto addButton = [this, insertAt](const QString &text, QMenu *menu,
                                             auto slot) {
-        auto *button = new Win7::MenuButton(text);
+        auto *button = new Aero::MenuButton(text);
         button->setShowArrow(menu != nullptr);
         if (menu) {
             button->setMenu(menu);
@@ -1517,13 +1459,13 @@ void MainWindow::rebuildContextualCommands()
 
     addButton(tr("Open"), nullptr, [this] { m_actOpen->trigger(); });
 
-    // Win7 puts "Extract all files" right here when a zip is picked.
+    // Win7 puts the extract command right here when an archive is picked
     if (selection.size() == 1 && Archives::isBrowsable(selection.first())) {
         addButton(tr("Extract all files"), nullptr,
                   [this] { m_actExtract->trigger(); });
     }
 
-    // Files only: a folder has exactly one thing that opens it.
+    // Files only, a folder having exactly one thing that opens it
     const bool anyFiles = std::any_of(selection.cbegin(), selection.cend(),
                                       [](const KFileItem &item) { return !item.isDir(); });
     if (anyFiles) {
@@ -1541,7 +1483,7 @@ void MainWindow::rebuildContextualCommands()
     }
 
     addButton(tr("Share with"), nullptr, [this] {
-        // The desktop's share plugins live in the item's service menu.
+        // The desktop's share plugins live in the item's service menu
         const QList<KFileItem> items = selectedItems();
         if (items.isEmpty())
             return;
@@ -1558,26 +1500,26 @@ void MainWindow::rebuildContextualCommands()
 
 QWidget *MainWindow::buildSearchAgainBar()
 {
-    // The search just run was names only, in one folder; these are the ways to
-    // widen it. Without them a content search is unreachable, the search box
-    // having nowhere to express a scope.
+    // The ways to widen a search, and without them a content search cannot be
+    // reached at all, the search box having nowhere to express a scope
     m_searchAgainBar = new QWidget;
     m_searchAgainBar->setObjectName(QStringLiteral("searchAgainBar"));
     m_searchAgainBar->setStyleSheet(
-        "#searchAgainBar { background: #F1F5FB; border-bottom: 1px solid #D6DFEC; }");
+        Aero::panelSheet(m_searchAgainBar->objectName(), Aero::Palette::StripSurface,
+                         Qt::BottomEdge, Aero::Palette::StripRule));
     m_searchAgainBar->hide();
 
     auto *row = new QHBoxLayout(m_searchAgainBar);
     row->setContentsMargins(10, 4, 10, 4);
     row->setSpacing(12);
 
-    row->addWidget(Win7::bodyLabel(tr("Search again in:")));
+    row->addWidget(Aero::bodyLabel(tr("Search again in:")));
 
     const auto link = [this, row](const QString &text, bool contents,
                                   bool wholeMachine) {
-        QLabel *label = Win7::bodyLabel(text, true);
-        label->installEventFilter(this);
-        m_searchAgainLinks.insert(label, {contents, wholeMachine});
+        auto *label = qobject_cast<Aero::LinkLabel *>(Aero::bodyLabel(text, true));
+        connect(label, &Aero::LinkLabel::clicked, this,
+                [this, contents, wholeMachine] { searchAgain(contents, wholeMachine); });
         row->addWidget(label);
         return label;
     };
@@ -1592,8 +1534,7 @@ QWidget *MainWindow::buildSearchAgainBar()
 void MainWindow::updateSearchAgainBar()
 {
     const QUrl url = currentUrl();
-    // Only kio-filenamesearch can widen the scope, so without it the strip
-    // would offer links that cannot do anything.
+    // Only the search worker can widen the scope
     m_searchAgainBar->setVisible(
         Locations::isSearch(url)
         && KProtocolInfo::isKnownProtocol(QStringLiteral("filenamesearch")));
@@ -1609,7 +1550,7 @@ void MainWindow::searchAgain(bool contents, bool wholeMachine)
     if (term.isEmpty())
         return;
 
-    // Win7's Computer scope is the whole machine: the filesystem root.
+    // Win7's computer scope is the whole machine, so the filesystem root
     const QUrl folder = wholeMachine ? QUrl::fromLocalFile(QStringLiteral("/"))
                                      : Locations::searchFolder(url);
     navigateTo(Locations::search(folder, term, contents));
@@ -1617,54 +1558,19 @@ void MainWindow::searchAgain(bool contents, bool wholeMachine)
 
 QWidget *MainWindow::buildNotificationBar()
 {
-    // Pale yellow, a hairline beneath, a close box at the right; full window
-    // width, above the navigation pane.
-    m_notification = new QWidget;
-    m_notification->setObjectName(QStringLiteral("win7Notification"));
-    m_notification->setCursor(Qt::PointingHandCursor);
-    m_notification->setStyleSheet(
-        "#win7Notification { background: #FFFFE1; border-bottom: 1px solid #E3C86B; }");
-    m_notification->hide();
+    m_notification = new Aero::NotificationStrip;
 
-    auto *row = new QHBoxLayout(m_notification);
-    row->setContentsMargins(10, 6, 8, 6);
-    row->setSpacing(8);
-
-    m_notificationText = Win7::label(QString(), 9, "#000000");
-    row->addWidget(m_notificationText, 1);
-
-    m_notificationDismiss = new QLabel(QStringLiteral("✕"));
-    m_notificationDismiss->setStyleSheet(
-        "QLabel { color: #000000; background: transparent; }"
-        "QLabel:hover { color: #6E6E6E; }");
-    m_notificationDismiss->setCursor(Qt::PointingHandCursor);
-    Win7::setPointSize(m_notificationDismiss, 9);
-    row->addWidget(m_notificationDismiss, 0, Qt::AlignVCenter);
-
-    m_notificationSlide = new QPropertyAnimation(m_notification, "maximumHeight", this);
-    m_notificationSlide->setDuration(kNotificationSlideDuration);
-    m_notificationSlide->setEasingCurve(QEasingCurve::OutCubic);
-    connect(m_notificationSlide, &QPropertyAnimation::finished, this, [this] {
-        // Released so the strip can grow if its text wraps to a second line.
-        if (m_notification->isVisible())
-            m_notification->setMaximumHeight(QWIDGETSIZE_MAX);
+    // The strip carries no policy, only reporting the click, and which dialog
+    // that means is decided here
+    connect(m_notification, &Aero::NotificationStrip::clicked, this, [this] {
+        if (m_notice == Notice::Administrator)
+            AccessDialogs::showAdministratorWarning(this);
+        else
+            showMountDialog();
     });
-
-    m_notificationTimer = new QTimer(this);
-    m_notificationTimer->setSingleShot(true);
-    m_notificationTimer->setInterval(kNotificationDelay);
-    connect(m_notificationTimer, &QTimer::timeout, this, [this] {
-        // During the pause the user may have navigated away, dismissed the
-        // strip, or mounted the last drive.
-        if (pendingNotice() == Notice::None)
-            return;
-
-        const int target = m_notification->sizeHint().height();
-        m_notification->setMaximumHeight(0);
-        m_notification->show();
-        m_notificationSlide->setStartValue(0);
-        m_notificationSlide->setEndValue(target);
-        m_notificationSlide->start();
+    // Dismissing hides it for the rest of the session
+    connect(m_notification, &Aero::NotificationStrip::dismissed, this, [this] {
+        m_notificationDismissed = true;
     });
 
     return m_notification;
@@ -1672,8 +1578,7 @@ QWidget *MainWindow::buildNotificationBar()
 
 MainWindow::Notice MainWindow::pendingNotice() const
 {
-    // The administrator warning outranks the drives one, and there is only one
-    // strip to say either in.
+    // Only one strip, and the administrator warning outranks the drives notice
     if (currentUrl().scheme() == QLatin1String("admin"))
         return Notice::Administrator;
 
@@ -1692,38 +1597,28 @@ void MainWindow::updateNotification()
 
     m_notice = pendingNotice();
     if (m_notice == Notice::None) {
-        // No animation on the way out: the delay and slide are there to make
-        // the arrival gentle, not to make leaving something to wait for.
-        m_notificationTimer->stop();
-        m_notificationSlide->stop();
-        m_notification->hide();
-        m_notification->setMaximumHeight(QWIDGETSIZE_MAX);
+        m_notification->clear();
         return;
     }
 
-    // The drives notice is a suggestion and can be waved away; the
-    // administrator one stays for as long as it is true.
-    m_notificationDismiss->setVisible(m_notice != Notice::Administrator);
+    // The drives notice can be waved away, where the administrator one stays
+    // for as long as it is true
+    m_notification->showMessage(
+        m_notice == Notice::Administrator
+            ? tr("You're navigating as an administrator, be careful. "
+                 "Click for information...")
+            : unmountedDrivesNotice(m_computerModel->unmountedCount()),
+        m_notice != Notice::Administrator);
+}
 
-    if (m_notice == Notice::Administrator) {
-        m_notificationText->setText(
-            tr("You're navigating as an administrator, be careful. "
-               "Click for information..."));
-    } else {
-        const int hidden = m_computerModel->unmountedCount();
-        m_notificationText->setText(
-            hidden == 1
-                ? tr("A drive is connected to your computer but is not mounted. Click to change...")
-                : tr("%1 drives are connected to your computer but are not mounted. "
-                     "Click to change...").arg(hidden));
-    }
-
-    // Already up or on its way: the text has been refreshed, and restarting the
-    // timer would let a changing count postpone the strip indefinitely.
-    if (m_notification->isVisible() || m_notificationTimer->isActive())
-        return;
-
-    m_notificationTimer->start();
+// Windows counts the drives it found rather than saying some
+QString MainWindow::unmountedDrivesNotice(int hidden)
+{
+    return hidden == 1
+        ? tr("A drive is connected to your computer but is not mounted. "
+             "Click to change...")
+        : tr("%1 drives are connected to your computer but are not mounted. "
+             "Click to change...").arg(hidden);
 }
 
 QWidget *MainWindow::buildBody()
@@ -1747,8 +1642,8 @@ QWidget *MainWindow::buildBody()
     });
     connect(m_fileView, &FileView::renameRequested, this, &MainWindow::applyRename);
     connect(m_fileView, &FileView::dropped, this, &MainWindow::handleDrop);
-    // Spring-loaded folders. Silent: the drag is still in progress, and the
-    // navigation sound belongs to something the user has finished doing.
+    // Silent, the drag still being in progress and the navigation sound
+    // belonging to something the user has finished doing
     connect(m_fileView, &FileView::springLoaded, this, [this](const QUrl &folder) {
         if (folder.isValid() && !folder.matches(currentUrl(), QUrl::StripTrailingSlash)) {
             pushHistory(folder);
@@ -1762,7 +1657,7 @@ QWidget *MainWindow::buildBody()
     });
     connect(m_fileView, &FileView::groupColumnChanged, this, [this](int column) {
         // Also fires when picking an icon mode dropped the grouping, hence the
-        // menu following the view rather than the other way round.
+        // menu following the view rather than the other way round
         for (QAction *action : m_groupGroup->actions())
             action->setChecked(action->data().toInt() == column);
     });
@@ -1781,7 +1676,7 @@ QWidget *MainWindow::buildBody()
 
     m_listPage = new QWidget;
     m_listPage->setObjectName(QStringLiteral("fileListPage"));
-    m_listPage->setStyleSheet("#fileListPage { background: #FFFFFF; }");
+    m_listPage->setStyleSheet(Aero::panelSheet(m_listPage->objectName(), Aero::Palette::Surface));
     auto *listLayout = new QHBoxLayout(m_listPage);
     listLayout->setContentsMargins(kListLeftMargin, 0, 0, 0);
     listLayout->setSpacing(0);
@@ -1789,11 +1684,11 @@ QWidget *MainWindow::buildBody()
 
     m_loadingPage = new QWidget;
     m_loadingPage->setObjectName(QStringLiteral("loadingPage"));
-    m_loadingPage->setStyleSheet("#loadingPage { background: #FFFFFF; }");
+    m_loadingPage->setStyleSheet(Aero::panelSheet(m_loadingPage->objectName(), Aero::Palette::Surface));
     auto *loadingLayout = new QVBoxLayout(m_loadingPage);
     loadingLayout->setContentsMargins(0, 0, 0, 0);
     loadingLayout->addSpacing(20);
-    m_loadingLabel = Win7::label(tr("Working on it..."), 9);
+    m_loadingLabel = Aero::label(tr("Working on it..."), 9);
     loadingLayout->addWidget(m_loadingLabel, 0, Qt::AlignHCenter);
     loadingLayout->addStretch(1);
 
@@ -1803,8 +1698,8 @@ QWidget *MainWindow::buildBody()
     m_stack->addWidget(m_loadingPage);
     m_splitter->addWidget(m_stack);
 
-    // Hidden until Alt+P. In the splitter rather than floating over the list,
-    // so its edge resizes the file list like the navigation pane's does.
+    // In the splitter rather than floating over the list, so its edge resizes
+    // the file list as the navigation pane's does
     m_previewPane = new PreviewPane;
     m_previewPane->hide();
     m_splitter->addWidget(m_previewPane);
@@ -1817,21 +1712,18 @@ QWidget *MainWindow::buildBody()
     return m_splitter;
 }
 
-// ---- Events -----------------------------------------------------------------
-
 bool MainWindow::eventFilter(QObject *watched, QEvent *event)
 {
-    // Mouse side buttons. The active-window check matters once a second window
-    // exists: every window installs this filter on the application, so without
-    // it the first one opened would answer the side buttons for all of them.
+    // Every window installs this filter on the application, so without the
+    // check on which is active the first one opened answers for all of them
     if (event->type() == QEvent::MouseButtonPress && isActiveWindow()) {
         auto *me = static_cast<QMouseEvent *>(event);
         if (me->button() == Qt::XButton1) { goBack();    return true; }
         if (me->button() == Qt::XButton2) { goForward(); return true; }
     }
 
-    // Ctrl+wheel resizes the icons. Here rather than in the views because both
-    // of them answer it and neither owns what changing mode means.
+    // Here rather than in the views, both answering it and neither owning what
+    // changing mode means
     if (event->type() == QEvent::Wheel && isActiveWindow()) {
         auto *wheel = static_cast<QWheelEvent *>(event);
         auto *widget = qobject_cast<QWidget *>(watched);
@@ -1844,8 +1736,8 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
         }
     }
 
-    // Alt on its own reveals the classic menu bar. Any other key pressed while
-    // Alt is held cancels it, so Alt+Left and Alt+Tab are unaffected.
+    // Any other key pressed while it is held cancels this, so the combinations
+    // are unaffected
     if (event->type() == QEvent::KeyPress) {
         auto *ke = static_cast<QKeyEvent *>(event);
         m_altAlone = (ke->key() == Qt::Key_Alt);
@@ -1859,33 +1751,14 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
         m_altAlone = false;
     }
 
-    // The strip is a plain widget, so its clicks arrive here. The close box is
-    // checked first: it sits inside the strip, and dismissing must not also
-    // open the dialog.
-    if (event->type() == QEvent::MouseButtonRelease) {
-        if (watched == m_notificationDismiss) {
-            m_notificationDismissed = true;
-            m_notification->hide();
-            return true;
-        }
-        if (watched == m_notification || watched == m_notificationText) {
-            if (m_notice == Notice::Administrator)
-                AccessDialogs::showAdministratorWarning(this);
-            else
-                showMountDialog();
-            return true;
-        }
-    }
-
-    // Clicking the address bar anywhere that is not a crumb starts editing.
     // Crumb links consume their own clicks below, so only the empty space, the
-    // leading icon and the current segment reach here, as in Win7.
+    // leading icon and the current segment reach here
     if (watched == m_pathBox && event->type() == QEvent::MouseButtonPress) {
         beginPathEdit();
         return true;
     }
 
-    // Not in the box's layout, so it has to be resized with it by hand.
+    // Not in the box's layout, so it has to be resized with it by hand
     if (watched == m_pathBox && event->type() == QEvent::Resize)
         layoutPathProgress();
 
@@ -1895,9 +1768,9 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
             endPathEdit();
             return true;
         }
-        // Clicking away cancels: committing on focus loss would navigate
-        // somewhere the user never pressed Enter on. The completer popup also
-        // counts as a focus change, hence the reason check.
+        // Clicking away cancels, since committing on focus loss would navigate
+        // somewhere the user never pressed Enter on, and the completion popup
+        // counts as a focus change too, hence checking the reason
         if (event->type() == QEvent::FocusOut) {
             auto *fe = static_cast<QFocusEvent *>(event);
             if (fe->reason() != Qt::PopupFocusReason) {
@@ -1907,42 +1780,10 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
         }
     }
 
-    // The "Search again in:" links, plain labels for the same reason the crumbs
-    // are: Win7's blue task-link look is not something a QPushButton can be
-    // talked into.
-    if (event->type() == QEvent::MouseButtonPress) {
-        const auto scope = m_searchAgainLinks.constFind(watched);
-        if (scope != m_searchAgainLinks.constEnd()) {
-            searchAgain(scope->contents, scope->wholeMachine);
-            return true;
-        }
-    }
-
-    // QLabel ignores `text-decoration` in style sheets, so underline-on-hover
-    // means toggling the font's underline flag directly. Registered crumbs
-    // only; the app-wide filter would otherwise underline every QLabel.
-    if (auto *label = qobject_cast<QLabel *>(watched)) {
-        const auto link = m_crumbLinks.constFind(watched);
-        if (link != m_crumbLinks.constEnd()) {
-            if (event->type() == QEvent::Enter || event->type() == QEvent::Leave) {
-                QFont font = label->font();
-                font.setUnderline(event->type() == QEvent::Enter);
-                label->setFont(font);
-            } else if (event->type() == QEvent::MouseButtonPress) {
-                navigateTo(link.value());
-                return true;
-            }
-        } else if (m_crumbArrows.contains(watched)
-                   && event->type() == QEvent::MouseButtonPress) {
-            showCrumbMenu(label);
-            return true;
-        }
-    }
-
+    // Plain labels for the same reason the crumbs are, Win7's blue task link
+    // look not being something a real button can be talked into
     return QMainWindow::eventFilter(watched, event);
 }
-
-// ---- Navigation -------------------------------------------------------------
 
 bool MainWindow::isComputerView() const
 {
@@ -1957,8 +1798,8 @@ bool MainWindow::isTrashView() const
 QUrl MainWindow::operationFolder() const
 {
     const QUrl current = currentUrl();
-    // Nothing can be created in a search result, so New, Paste and "Open in
-    // Terminal" act on the folder that was searched.
+    // Nothing can be created in a search result, so those commands act on the
+    // folder that was searched
     if (Locations::isSearch(current))
         return Locations::searchFolder(current);
     return current;
@@ -1967,16 +1808,15 @@ QUrl MainWindow::operationFolder() const
 void MainWindow::showLocation(const QUrl &url)
 {
     if (Locations::isComputer(url)) {
-        // Never handed to KIO; there is no worker for it. Computer is built
-        // in-process and always ready, so any pending placeholder for the
-        // folder just left is cancelled.
+        // Never handed to KIO, there being no worker, and this page is built
+        // in process and always ready so a pending placeholder is cancelled
         m_loading = false;
         m_loadingTimer->stop();
         stopPathProgress();
         m_stack->setCurrentWidget(m_computerView);
 
-        // Win7 opens Computer in Tiles rather than whatever the last folder
-        // used, so it falls back to its own mode, not the global default.
+        // Win7 opens this page in tiles, so it falls back to its own mode
+        // rather than the global default
         m_computerView->setViewMode(Settings::hasViewModeFor(url)
                                         ? Settings::viewModeFor(url)
                                         : Settings::ViewMode::Tiles);
@@ -1984,9 +1824,8 @@ void MainWindow::showLocation(const QUrl &url)
         m_stack->setCurrentWidget(m_listPage);
         m_model->setUrl(url);
 
-        // Win7 remembers a view per folder. Not through setViewMode(), the
-        // user-initiated path, which would write this folder's mode back out
-        // as the default for every folder.
+        // Not through the path a user takes, which would write this folder's
+        // mode back out as the default for every folder
         m_fileView->setViewMode(Settings::viewModeFor(url));
     }
 
@@ -1995,9 +1834,8 @@ void MainWindow::showLocation(const QUrl &url)
 
     m_fileView->setDestination(operationFolder());
 
-    // A stale filter would show the new folder already narrowed with no visible
-    // cause. A search result keeps its term on show, that being what produced
-    // it.
+    // A stale filter would narrow the new folder with no visible cause, and
+    // search results keep their term, that being what produced them
     if (Locations::isSearch(url)) {
         QSignalBlocker blocker(m_searchBox);
         m_searchBox->setText(Locations::searchTerm(url));
@@ -2050,19 +1888,16 @@ void MainWindow::goUp()
 {
     const QUrl current = currentUrl();
     if (Locations::isComputer(current))
-        return;   // Computer is the top of the tree; there is nowhere above it
+        return;   // Computer is the top of the tree, with nowhere above it
 
-    // Up out of a set of search results goes back to the folder that was
-    // searched, which is the only sensible parent for them.
+    // The folder that was searched is the only sensible parent for results
     if (Locations::isSearch(current)) {
         navigateTo(Locations::searchFolder(current));
         return;
     }
 
-    // Up out of an archive's own root leaves the archive, landing in the
-    // folder the archive file sits in. Without this KIO::upUrl would keep
-    // walking the archive's path as if it were a directory tree and produce a
-    // location no worker can list.
+    // Up out of an archive's root lands in the folder the archive sits in, the
+    // ordinary walk carrying on and producing a location nothing can list
     if (Archives::isInsideArchive(current)) {
         const QUrl archiveFile = Archives::archiveFileFor(current);
         if (archiveFile.isValid()
@@ -2073,8 +1908,8 @@ void MainWindow::goUp()
         }
     }
 
-    // KIO::upUrl("/") returns "/" again, so the filesystem root would be a dead
-    // end. Win7 goes from a drive's root up to Computer.
+    // The ordinary walk stops at the filesystem root, where Win7 goes on to
+    // Computer instead
     if (current.isLocalFile()
         && QDir::cleanPath(current.toLocalFile()) == QLatin1String("/")) {
         navigateTo(Locations::computer());
@@ -2097,10 +1932,10 @@ void MainWindow::refresh()
 
 void MainWindow::pushHistory(const QUrl &url)
 {
-    // Re-navigating to the current location shouldn't grow history.
+    // Navigating to the current location again must not grow the history
     if (m_historyIndex >= 0 && m_history.at(m_historyIndex) == url)
         return;
-    // Drop any forward entries before branching to a new location.
+    // Drop any forward entries before branching to a new location
     while (m_history.size() > m_historyIndex + 1)
         m_history.removeLast();
     m_history.append(url);
@@ -2118,12 +1953,11 @@ void MainWindow::updateNavButtons()
 
 void MainWindow::updateWindowTitle()
 {
-    // The last crumb, so the title agrees with the address bar ("Home" rather
-    // than the user's login name).
+    // The last crumb, so the title agrees with the address bar
     const QList<QPair<QString, QUrl>> crumbs = crumbsFor(currentUrl());
     const QString label = crumbs.isEmpty() ? tr("Computer") : crumbs.last().first;
     setWindowTitle(label);
-    // Win7's search box names the folder it will search.
+    // Win7's search box names the folder it will search
     m_searchBox->setPlaceholderText(tr("Search %1").arg(label));
 }
 
@@ -2134,15 +1968,13 @@ void MainWindow::startSearch()
     if (term.isEmpty() || isComputerView() || !folder.isValid())
         return;
 
-    // Folder Options, Search: with subfolder search off, Enter does nothing
-    // beyond what typing already did, and the folder stays filtered.
+    // With subfolder search off, Enter does nothing beyond what typing did
     if (!Settings::searchSubfolders())
         return;
 
-    // kio-filenamesearch is a separate package, and navigating to a scheme with
-    // no worker fails with "unsupported protocol", which says nothing about
-    // what to install. The as-you-type filter is still in place, so declining
-    // to navigate leaves the folder narrowed rather than empty.
+    // Without the search worker the navigation fails with a message that says
+    // nothing about what to install, and the filter typing applied is still in
+    // place so declining leaves the folder narrowed rather than empty
     if (!KProtocolInfo::isKnownProtocol(QStringLiteral("filenamesearch"))) {
         m_details->showMessage(tr("Searching subfolders needs kio-extras. "
                                   "Showing matches in this folder only."));
@@ -2154,7 +1986,7 @@ void MainWindow::startSearch()
 
 void MainWindow::openNewWindow(const QUrl &url)
 {
-    // WA_DeleteOnClose, set in the constructor, owns this.
+    // The delete on close flag set in the constructor owns this
     auto *window = new MainWindow(url.isValid() ? url : Locations::computer());
     window->show();
 }
@@ -2175,17 +2007,15 @@ void MainWindow::showOptionsDialog()
 {
     OptionsDialog dialog(this);
 
-    // Every window: these are application settings, and a second window still
-    // showing hidden files after they were switched off reads as a bug.
+    // Every window, these being application settings
     connect(&dialog, &OptionsDialog::applied, this, [] {
         for (MainWindow *window : std::as_const(g_windows))
             window->applyOptions();
     });
 
     connect(&dialog, &OptionsDialog::applyViewToAllFolders, this, [this] {
-        // Win7's "Apply to Folders": this folder's view becomes the default.
-        // Clearing the remembered ones is what extends it to folders that
-        // already had a preference, as the button promises.
+        // This folder's view becomes the default, and clearing the remembered
+        // ones is what extends it to folders that already had a preference
         const Settings::ViewMode mode = isComputerView() ? m_computerView->viewMode()
                                                          : m_fileView->viewMode();
         Settings::clearRememberedViewModes();
@@ -2209,12 +2039,12 @@ void MainWindow::applyOptions()
     m_fileView->setCheckBoxesVisible(Settings::useCheckBoxes());
     m_fileView->setSingleClickToOpen(Settings::singleClickToOpen());
 
-    // Only ever forces the bar on: hiding it here would snatch it away from a
-    // user who had just opened it with Alt.
+    // Only ever forces the bar on, hiding it snatching it from a user who had
+    // just opened it themselves
     if (Settings::alwaysShowMenus())
         menuBar()->show();
 
-    // The menu actions are a second view of the same settings.
+    // The menu actions are a second view of the same settings
     m_actShowHidden->setChecked(Settings::showHiddenFiles());
     m_actHideExtensions->setChecked(Settings::hideKnownExtensions());
     m_actUseCheckBoxes->setChecked(Settings::useCheckBoxes());
@@ -2229,9 +2059,8 @@ void MainWindow::showMapDriveDialog()
     if (dialog.exec() != QDialog::Accepted)
         return;
 
-    // Windows opens the share as soon as it is mapped, which is also the only
-    // way to find out whether it is reachable: nothing has been contacted yet,
-    // and KIO's authentication prompt comes with the first listing.
+    // Also the only way to find out whether the share is reachable, nothing
+    // having been contacted yet and the prompt coming with the first listing
     m_places->refresh();
     navigateTo(dialog.mappedUrl());
 }
@@ -2239,24 +2068,23 @@ void MainWindow::showMapDriveDialog()
 void MainWindow::setViewMode(Settings::ViewMode mode)
 {
     if (isComputerView()) {
-        // Remembered for Computer alone, not adopted as the default: a mode
-        // picked for a page of drives should not follow the user into folders.
+        // For this page alone, a mode picked for drives not following the user
+        // into folders
         m_computerView->setViewMode(mode);
         Settings::setViewModeFor(currentUrl(), mode);
         return;
     }
 
     m_fileView->setViewMode(mode);
-    // Remembered for this folder and adopted as the default for folders with
-    // no preference of their own.
+    // Also the default for folders with no preference of their own
     Settings::setViewModeFor(currentUrl(), mode);
     Settings::setDefaultViewMode(mode);
 }
 
 void MainWindow::zoomViewMode(int angleDelta)
 {
-    // A wheel notch is 120 units; anything finer is carried over rather than
-    // discarded, so a touchpad still gets there eventually.
+    // Anything finer than a notch is carried over, so a touchpad still gets
+    // there eventually
     m_zoomRemainder += angleDelta;
     const int steps = m_zoomRemainder / 120;
     if (steps == 0)
@@ -2265,8 +2093,7 @@ void MainWindow::zoomViewMode(int angleDelta)
 
     const Settings::ViewMode current = isComputerView() ? m_computerView->viewMode()
                                                         : m_fileView->viewMode();
-    // Scrolling up means bigger, and the modes run largest-first, so a
-    // positive delta walks the list backwards.
+    // The modes run largest first, so scrolling up walks the list backwards
     const int next = qBound(int(Settings::ViewMode::ExtraLargeIcons),
                             int(current) - steps,
                             int(Settings::ViewMode::Content));
@@ -2274,8 +2101,7 @@ void MainWindow::zoomViewMode(int angleDelta)
         return;
 
     setViewMode(Settings::ViewMode(next));
-    // The menu's path ticks its own action group; from the wheel there is no
-    // action involved, so the menus are brought into line by hand.
+    // The menu ticks its own action group, where from the wheel there is none
     updateActionStates();
 }
 
@@ -2289,14 +2115,14 @@ void MainWindow::refreshBranding()
 
 void MainWindow::updateListMessage()
 {
-    // Nothing to say while the loading page is up, while Computer is showing,
-    // or when the folder failed to open.
+    // Nothing to say while the loading page is up, while the drives are
+    // showing, or when the folder failed to open
     if (isComputerView() || m_loading || m_lastLoadFailed || m_model->rowCount() > 0) {
         m_fileView->setStatusMessage(QString());
         return;
     }
 
-    // An empty search result is a different statement from an empty folder.
+    // An empty search result says something different from an empty folder
     if (Locations::isSearch(currentUrl()))
         m_fileView->setStatusMessage(tr("No items match your search."));
     else if (!m_searchBox->text().isEmpty())
@@ -2322,8 +2148,8 @@ void MainWindow::updateDetailsPane()
         return;
     }
 
-    // Before the pane is filled in, so a folder on a different volume clears
-    // the previous figure rather than briefly showing it.
+    // Before the pane is filled in, or a folder on another volume briefly
+    // shows the previous figure
     updateFreeSpace();
     m_details->showFolderSummary(m_model->rowCount(), m_freeSpace);
 }
@@ -2332,24 +2158,23 @@ void MainWindow::updateFreeSpace()
 {
     const QUrl folder = currentUrl();
 
-    // Only a real directory sits on a volume; asking about a search result, an
-    // archive or the Recycle Bin answers about the wrong filesystem at best.
+    // Only a real directory sits on a volume, anything else answering about
+    // the wrong filesystem at best
     if (!folder.isLocalFile() || Locations::isSearch(folder)
         || Archives::isInsideArchive(folder)) {
         m_freeSpace.clear();
         return;
     }
 
-    // Once per folder: the figure barely moves while a folder is on screen, and
-    // the query is not free on a network mount.
+    // Once per folder, the figure barely moving and the query not being free
+    // on a network mount
     if (folder == m_freeSpaceUrl)
         return;
     m_freeSpaceUrl = folder;
     m_freeSpace.clear();
 
-    // Through KIO rather than QStorageInfo: statfs on an unresponsive network
-    // mount blocks, which would freeze the window on every cleared selection.
-    // The job answers later, or never, and the pane shows the count until then.
+    // Through a job rather than a direct query, which blocks on an unresponsive
+    // mount and would freeze the window on every cleared selection
     KIO::FileSystemFreeSpaceJob *job = KIO::fileSystemFreeSpace(folder);
     connect(job, &KJob::result, this, [this, job, folder] {
         if (job->error() || folder != m_freeSpaceUrl)
@@ -2358,8 +2183,7 @@ void MainWindow::updateFreeSpace()
         m_freeSpace = tr("%1 free of %2")
                           .arg(KIO::convertSize(job->availableSize()),
                                KIO::convertSize(job->size()));
-        // Only if the pane is still showing this folder's summary; a selection
-        // made in the meantime owns the pane now.
+        // A selection made in the meantime owns the pane now
         if (selectedItems().isEmpty() && !isComputerView())
             m_details->showFolderSummary(m_model->rowCount(), m_freeSpace);
     });
@@ -2368,11 +2192,10 @@ void MainWindow::updateFreeSpace()
 bool MainWindow::isFolderWritable(const QUrl &folder) const
 {
     if (!folder.isLocalFile())
-        return true;   // not our question to answer; KIO reports what it finds
+        return true;   // not our question to answer, KIO reports what it finds
 
-    // Cached per folder: this is called on every selection change, which during
-    // a rubber-band drag is every mouse move, and the stat behind it can stall
-    // on a network mount that has gone away.
+    // Cached per folder, this being called on every selection change, which
+    // during a rubber band drag is every mouse move, and the check can stall
     if (folder != m_writableUrl) {
         m_writableUrl = folder;
         m_writable = QFileInfo(folder.toLocalFile()).isWritable();
@@ -2389,8 +2212,8 @@ void MainWindow::updateActionStates()
     const bool trash = isTrashView();
     const QUrl folder = operationFolder();
 
-    // KIO's archive workers are read-only, so everything that would write has
-    // to stand down; offering New and Paste here would only fail later.
+    // The archive workers are read only, so everything that would write has to
+    // stand down
     const bool readOnly = Archives::isInsideArchive(folder);
 
     m_actOpen->setEnabled(any);
@@ -2402,8 +2225,7 @@ void MainWindow::updateActionStates()
     m_actPaste->setEnabled(!computer && !trash && !readOnly && FileOps::canPaste());
     m_actDelete->setEnabled(any && !trash && !readOnly);
     m_actDeleteForever->setEnabled(any && !readOnly);
-    // Win7 renames a whole selection at once, one base name plus a counter, so
-    // this is not a single-item command.
+    // Win7 renames a whole selection at once, so this is not a single item
     m_actRename->setEnabled(any && !trash && !readOnly);
     m_newFileMenu->setEnabled(!computer && !trash && !readOnly);
     m_actProperties->setEnabled(!computer);
@@ -2420,16 +2242,14 @@ void MainWindow::updateActionStates()
         (one && Archives::isBrowsable(selection.first()))
         || Archives::isInsideArchive(currentUrl()));
 
-    // Only where the user cannot already write: an always-available elevation
-    // becomes one people click by reflex. admin:// is local only, and there is
-    // nothing above an already-elevated view.
+    // Only where the user cannot already write, or elevation becomes something
+    // people click by reflex, and the admin worker is local only
     const bool alreadyAdmin = currentUrl().scheme() == QLatin1String("admin");
     m_actOpenAsAdmin->setEnabled(folder.isLocalFile() && !alreadyAdmin
                                  && !isFolderWritable(folder));
 
-    // Computer switches views like any other page, so the modes apply there
-    // too. Its ordering does not: this sort menu is over the file list's
-    // columns, and the drive-specific one lives on the page's context menu.
+    // The modes apply to the drives page too, but not the ordering, this menu
+    // being over the file list's columns while drives sort from their own
     const Settings::ViewMode mode = computer ? m_computerView->viewMode()
                                              : m_fileView->viewMode();
     for (QAction *action : m_viewModeGroup->actions()) {
@@ -2444,8 +2264,6 @@ void MainWindow::updateActionStates()
     m_sortDescending->setChecked(m_model->sortOrder() == Qt::DescendingOrder);
 }
 
-// ---- Operations -------------------------------------------------------------
-
 void MainWindow::activateIndex(const QModelIndex &index)
 {
     const KFileItem item = m_model->itemForIndex(index);
@@ -2456,7 +2274,7 @@ void MainWindow::activateIndex(const QModelIndex &index)
 
 void MainWindow::openItems(const QList<KFileItem> &items)
 {
-    // Folder Options' "Open each folder in its own window". Folders only.
+    // The setting that opens each folder in its own window, folders only
     const bool separateWindows = Settings::browseInNewWindow();
 
     for (const KFileItem &item : items) {
@@ -2468,8 +2286,7 @@ void MainWindow::openItems(const QList<KFileItem> &items)
             continue;
         }
 
-        // A zip opens as a folder, as Windows has done since XP. Anything KIO
-        // has no archive worker for goes to the desktop's handler instead.
+        // Anything with no archive worker goes to the desktop's handler
         const QUrl archive = Archives::urlFor(item);
         if (archive.isValid()) {
             if (separateWindows)
@@ -2485,7 +2302,7 @@ void MainWindow::openItems(const QList<KFileItem> &items)
 
 void MainWindow::extractSelection()
 {
-    // Either an archive picked in the list, or the one being browsed.
+    // Either an archive picked in the list, or the one being browsed
     const QList<KFileItem> selection = selectedItems();
     QUrl archive;
     if (selection.size() == 1 && Archives::isBrowsable(selection.first()))
@@ -2500,7 +2317,7 @@ void MainWindow::extractSelection()
     if (!archiveFile.isValid())
         return;
 
-    // Windows suggests a folder beside the archive, named after it.
+    // Windows suggests a folder beside the archive, named after it
     const QString name = archiveFile.fileName();
     const int dot = name.lastIndexOf(QLatin1Char('.'));
     const QString folder = dot > 0 ? name.left(dot) : name;
@@ -2531,13 +2348,13 @@ QString MainWindow::openFolderAsAdministrator(const QUrl &folder)
         return tr("Only folders on this computer can be opened as "
                   "administrator.");
 
-    // kio-admin is a separate package, and its absence would otherwise surface
-    // as "unsupported protocol".
+    // The admin worker is a separate package, and without this check its
+    // absence surfaces as an unsupported protocol
     if (!KProtocolInfo::isKnownProtocol(QStringLiteral("admin")))
         return tr("Opening a folder as administrator needs kio-admin.");
 
-    // A new window: mixing an elevated view into the same back/forward history
-    // makes it far too easy to lose track of which one is in front.
+    // A new window, since mixing an elevated view into the same history makes
+    // it far too easy to lose track of which one is in front
     QUrl admin = folder;
     admin.setScheme(QStringLiteral("admin"));
     openNewWindow(admin);
@@ -2546,38 +2363,35 @@ QString MainWindow::openFolderAsAdministrator(const QUrl &folder)
 
 void MainWindow::reportListingFailure(int error, const QUrl &url)
 {
-    // Anything else is already in the details pane in KIO's own words; these
-    // two dialogs are only for being refused.
+    // Anything else is already in the details pane in KIO's own words
     if (!AccessDialogs::isPermissionError(error))
         return;
 
     const QUrl folder = url.isValid() ? url : currentUrl();
     const QString path = displayPath(folder);
 
-    // Elevation is only offered where it could change the answer. An elevated
-    // view has nothing above it, and a server refuses on its own account, not
-    // this machine's; both get Windows' flat "Access is denied", which is also
-    // where the prompt below lands once Continue has not helped.
+    // Only where elevation could change the answer, an elevated view having
+    // nothing above it and a server refusing on its own account, so both of
+    // those get Windows' flat refusal instead
     const bool alreadyAdmin = folder.scheme() == QLatin1String("admin");
     if (alreadyAdmin || !folder.isLocalFile()) {
         AccessDialogs::showLocationUnavailable(this, path);
         return;
     }
 
-    // Windows titles this one with the name of the folder that refused.
+    // Windows titles this one with the name of the folder that refused
     QString name = folder.fileName();
     if (name.isEmpty())
         name = path;
-    // Cancel still leaves the folder shut, and Windows ends the sequence with
-    // the same box whether the rights were declined or not granted.
+    // Windows ends the sequence with the same box whether the rights were
+    // declined or simply not granted
     if (!AccessDialogs::askForAdminAccess(this, name)) {
         AccessDialogs::showLocationUnavailable(this, path);
         return;
     }
 
-    // Continue is "Open as Administrator" aimed at the folder that refused
-    // rather than at whatever this window ended up showing. A dismissed polkit
-    // prompt instead fails inside the new window, which answers it likewise.
+    // Aimed at the folder that refused rather than whatever this window ended
+    // up showing
     const QString failure = openFolderAsAdministrator(folder);
     if (!failure.isEmpty())
         AccessDialogs::showLocationUnavailable(this, path, failure);
@@ -2585,7 +2399,7 @@ void MainWindow::reportListingFailure(int error, const QUrl &url)
 
 QString MainWindow::displayPath(const QUrl &url)
 {
-    // admin:/etc is plumbing showing through, and nothing to put in a message.
+    // The worker's own location is plumbing, and nothing to put in a message
     QUrl local = url;
     if (local.scheme() == QLatin1String("admin"))
         local.setScheme(QStringLiteral("file"));
@@ -2597,8 +2411,8 @@ void MainWindow::handleDrop(QDropEvent *event, const QUrl &destination)
     if (!destination.isValid() || Locations::isComputer(destination))
         return;
 
-    // KIO::DropJob puts up the copy/move/link menu, performs the transfer and
-    // records it with the undo manager.
+    // The job puts up the copy, move and link menu, performs the transfer and
+    // records it with the undo manager
     FileOps::dropOn(event, destination, this);
 }
 
@@ -2609,9 +2423,8 @@ void MainWindow::showContextMenu(const QPoint &globalPos, bool onItem)
 
     QMenu menu(this);
 
-    // A click on a row asks about that row, one on the empty space asks about
-    // the folder. The views clear the selection when a click misses, so an
-    // empty selection means the same as a background click.
+    // The views clear the selection when a click misses, so an empty selection
+    // means the same as a click on the background
     if (onItem && !selection.isEmpty())
         buildItemContextMenu(menu, selection);
     else
@@ -2626,7 +2439,7 @@ void MainWindow::buildItemContextMenu(QMenu &menu,
     menu.addAction(m_actOpen);
     if (std::any_of(selection.cbegin(), selection.cend(),
                     [](const KFileItem &item) { return !item.isDir(); })) {
-        // Also where installed service menus ("Extract here") come from.
+        // Also where installed service menus come from
         m_itemActions->setItemListProperties(
             KFileItemListProperties(KFileItemList(selection)));
         m_itemActions->insertOpenWithActionsTo(nullptr, &menu, {});
@@ -2641,7 +2454,7 @@ void MainWindow::buildItemContextMenu(QMenu &menu,
         return;
     }
 
-    // Right above Cut, where Win7's zip context menu puts it.
+    // Right above cut, where Win7's archive menu puts it
     if (selection.size() == 1 && Archives::isBrowsable(selection.first())) {
         menu.addAction(m_actExtract);
         menu.addSeparator();
@@ -2660,8 +2473,7 @@ void MainWindow::buildItemContextMenu(QMenu &menu,
     menu.addSeparator();
     menu.addAction(m_actProperties);
 
-    // Service menus attach to the selection, so the folder menu below has
-    // nothing for them to act on.
+    // Service menus attach to the selection, which a folder menu has none of
     m_itemActions->setItemListProperties(
         KFileItemListProperties(KFileItemList(selection)));
     m_itemActions->addActionsTo(&menu);
@@ -2669,7 +2481,7 @@ void MainWindow::buildItemContextMenu(QMenu &menu,
 
 void MainWindow::buildFolderContextMenu(QMenu &menu)
 {
-    // Win7's order: arrangement, then clipboard, then what can be created.
+    // Win7's order, arrangement, then clipboard, then what can be created
     QMenu *view = menu.addMenu(tr("View"));
     for (QAction *action : m_viewModeGroup->actions())
         view->addAction(action);
@@ -2699,7 +2511,7 @@ void MainWindow::buildFolderContextMenu(QMenu &menu)
     menu.addAction(m_actSelectAll);
     menu.addAction(m_actInvertSelection);
 
-    // Extracting the archive being browsed, from inside it.
+    // Extracting the archive being browsed, from inside it
     if (Archives::isInsideArchive(currentUrl())) {
         menu.addSeparator();
         menu.addAction(m_actExtract);
@@ -2708,8 +2520,8 @@ void MainWindow::buildFolderContextMenu(QMenu &menu)
     if (operationFolder().isLocalFile()) {
         menu.addSeparator();
         menu.addAction(m_actOpenTerminal);
-        // Only where it would help: offering elevation on a writable folder
-        // teaches the user to reach for it by reflex.
+        // Only where it would help, offering it on a writable folder teaching
+        // the user to reach for elevation by reflex
         if (m_actOpenAsAdmin->isEnabled())
             menu.addAction(m_actOpenAsAdmin);
     }
@@ -2735,8 +2547,8 @@ void MainWindow::showComputerContextMenu(const QUrl &url, const QPoint &globalPo
         menu.addSeparator();
     }
 
-    // Through the places model, the same route the desktop's device notifier
-    // takes: Solid owns the unmount, the polkit prompt and the reporting.
+    // The same route the desktop's device notifier takes, the unmount, the
+    // prompt and the reporting all belonging to the system beneath
     KFilePlacesModel *places = m_places->placesModel();
     const QModelIndex placeIndex = m_computerView->placeIndexFor(url);
     if (placeIndex.isValid()) {
@@ -2744,7 +2556,7 @@ void MainWindow::showComputerContextMenu(const QUrl &url, const QPoint &globalPo
             menu.addAction(tr("Connect"), this,
                            [places, placeIndex] { places->requestSetup(placeIndex); });
         } else if (places->isDevice(placeIndex)) {
-            // Never the drive the running system is on.
+            // Never the drive the running system is on
             const QString mount = places->url(placeIndex).toLocalFile();
             if (QDir::cleanPath(mount) != QLatin1String("/")) {
                 menu.addAction(tr("Eject"), this,
@@ -2754,9 +2566,8 @@ void MainWindow::showComputerContextMenu(const QUrl &url, const QPoint &globalPo
             }
         }
         menu.addAction(tr("Rename..."), this, [this, places, placeIndex] {
-            // The places model's label, which is what Win7's drive rename
-            // changes visually. The volume's own label belongs to a partition
-            // tool.
+            // The places model's label, the volume's own belonging to a
+            // partition tool
             bool ok = false;
             const QString name = QInputDialog::getText(
                 this, tr("Rename"), tr("Drive name:"), QLineEdit::Normal,
@@ -2798,19 +2609,17 @@ void MainWindow::showComputerContextMenu(const QUrl &url, const QPoint &globalPo
 
 void MainWindow::buildSendToMenu(QMenu *menu)
 {
-    // Win7's Send To: a Desktop shortcut, the user's own folders, and every
-    // removable drive plugged in.
     const QList<QUrl> urls = selectedUrls();
     if (urls.isEmpty()) {
         menu->setEnabled(false);
         return;
     }
 
-    // Local files only: Ark works on paths, not on KIO URLs.
+    // Local files only, the archiver working on paths rather than locations
     const bool allLocal = std::all_of(urls.cbegin(), urls.cend(),
                                       [](const QUrl &url) { return url.isLocalFile(); });
     if (allLocal && FileOps::canCompress()) {
-        menu->addAction(themeIcon({"application-zip", "package-x-generic"}),
+        menu->addAction(Aero::themeIcon({"application-zip", "package-x-generic"}),
                         tr("Compressed (zipped) folder"), this, [this, urls] {
             if (!FileOps::compress(urls, this))
                 m_details->showMessage(tr("Creating an archive needs Ark."));
@@ -2821,7 +2630,7 @@ void MainWindow::buildSendToMenu(QMenu *menu)
     const QString desktop = QStandardPaths::writableLocation(
         QStandardPaths::DesktopLocation);
     if (!desktop.isEmpty()) {
-        menu->addAction(themeIcon({"user-desktop"}), tr("Desktop (create shortcut)"),
+        menu->addAction(Aero::themeIcon({"user-desktop"}), tr("Desktop (create shortcut)"),
                         this, [this, urls, desktop] {
             FileOps::createLink(urls, QUrl::fromLocalFile(desktop), this);
         });
@@ -2837,14 +2646,13 @@ void MainWindow::buildSendToMenu(QMenu *menu)
         if (path.isEmpty())
             continue;
         const QUrl target = QUrl::fromLocalFile(path);
-        menu->addAction(themeIcon({iconName, "folder"}), QDir(path).dirName(),
+        menu->addAction(Aero::themeIcon({iconName, "folder"}), QDir(path).dirName(),
                         this, [this, urls, target] {
             FileOps::copy(urls, target, this);
         });
     }
 
-    // Removable drives only; nobody means to send a file to the disk it is
-    // already on.
+    // Removable drives only
     bool separatorAdded = false;
     for (int row = 0; row < m_computerModel->rowCount(); ++row) {
         const QModelIndex index = m_computerModel->index(row, ComputerModel::Name);
@@ -2867,8 +2675,8 @@ void MainWindow::selectOnArrival(const QList<QUrl> &urls)
 {
     m_pendingSelection = urls;
     m_pendingRename = false;
-    // Tried straight away too: a reveal for the folder already on screen has
-    // nothing to wait for.
+    // Tried straight away too, a reveal for the folder already on screen having
+    // nothing to wait for
     applyPendingSelection(!m_loading);
 }
 
@@ -2878,8 +2686,7 @@ void MainWindow::applyPendingSelection(bool listingFinished)
         return;
 
     if (m_pendingRename) {
-        // The New menu's case: one fresh item, straight into the rename editor
-        // once it is listed.
+        // The new menu's case, straight into the rename editor once listed
         const QUrl target = m_pendingSelection.constFirst();
         if (!m_fileView->selectUrl(target, true)) {
             if (listingFinished)
@@ -2893,9 +2700,8 @@ void MainWindow::applyPendingSelection(bool listingFinished)
 
     m_pendingSelection = m_fileView->selectUrls(m_pendingSelection);
 
-    // Dropped once the listing ends, found or not: a file deleted between the
-    // request and the read is not going to turn up, and a pending request
-    // would hijack the user's next selection.
+    // Dropped once the listing ends, found or not, or a request left pending
+    // hijacks the user's next selection
     if (listingFinished)
         m_pendingSelection.clear();
 }
@@ -2906,14 +2712,13 @@ void MainWindow::renameSelection()
     if (selection.isEmpty())
         return;
 
-    // Win7's F2 on several files opens one editor and applies what it commits
-    // to all of them. Remembered now rather than read back on commit: opening
-    // the editor can change the current index.
+    // A rename over several files opens one editor and applies what it commits
+    // to all of them, and they are remembered now since opening the editor
+    // moves the current index
     m_batchRename = selection.size() > 1 ? selection : QList<KFileItem>();
 
-    // In-place, in the list. The editor commits through renameRequested rather
-    // than writing to the model, so the rename goes through KIO and lands in
-    // the undo history.
+    // The editor reports the new name rather than writing to the model, so the
+    // rename goes through KIO and lands in the undo history
     m_fileView->renameItem(selection.first().url());
 }
 
@@ -2922,9 +2727,8 @@ void MainWindow::applyRename(const QUrl &url, const QString &newName)
     const QList<KFileItem> batch = m_batchRename;
     m_batchRename.clear();
 
-    // A batch commits its text as the base name for all of it. Checked against
-    // the URL actually committed: cancelling never reaches here, so a batch
-    // left over from an abandoned rename must not capture the next single one.
+    // Checked against what was actually committed, so a batch left over from an
+    // abandoned rename cannot capture the next single one
     const bool sameBatch = std::any_of(batch.cbegin(), batch.cend(),
                                        [&url](const KFileItem &item) {
         return item.url() == url;
@@ -2940,7 +2744,7 @@ void MainWindow::applyRename(const QUrl &url, const QString &newName)
 void MainWindow::createNewFolder()
 {
     if (isComputerView())
-        return;   // Computer is not a directory; there is nothing to create in
+        return;   // Computer is not a directory, so nothing can be created in it
 
     m_newFileMenu->setWorkingDirectory(operationFolder());
     m_newFileMenu->createDirectory();
@@ -2948,8 +2752,8 @@ void MainWindow::createNewFolder()
 
 QList<KFileItem> MainWindow::selectedItems() const
 {
-    // Computer's rows are devices, not files, and its indices have no
-    // relationship to the directory model's.
+    // The drives page has devices for rows, and its indices bear no relation to
+    // the directory model's
     if (!m_fileView || isComputerView())
         return {};
     return m_model->itemsForIndexes(m_fileView->selectedIndexes());

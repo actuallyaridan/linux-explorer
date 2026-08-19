@@ -8,15 +8,12 @@
 
 namespace {
 
-// The Device Manager's About box, to the pixel: plain labels at the application
-// font, Qt's default layout spacing, no emphasis anywhere. The Win7Ui helpers
-// used elsewhere are deliberately avoided here, since they set a point size and
-// colour of their own and the two boxes would stop matching.
+// Plain labels at the application font, the chrome's text helpers being avoided
+// here since they set a size and colour of their own
 constexpr int kDialogWidth = 340;
 constexpr int kIconSize = 64;
 
-// Hard-coded, as the Device Manager's is. Bump it here too; main.cpp's
-// setApplicationVersion is for --version and is not what this box reports.
+// The version this box reports, which is not the one the command line prints
 const char *const kVersion = "Version: 0.1";
 
 } // namespace

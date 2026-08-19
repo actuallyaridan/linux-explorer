@@ -4,40 +4,29 @@
 
 class QWidget;
 
-// The two dialogs Windows puts up when it will not let you in.
+// The two dialogs Windows puts up when it will not let you in, the flat refusal
+// and the elevation prompt
 //
-//  - "Location is not available", the red-cross box carrying a bare "Access is
-//    denied.", Windows' answer once there is nothing left to try.
-//  - the elevation prompt, "You don't currently have permission to access this
-//    folder", whose Continue asks for the rights the folder wants.
-//
-// Only the wording and the shape are Windows'. Continue is not Windows' ACL
-// rewrite: the caller decides what it means, and MainWindow answers it with
-// "Open as Administrator". Nothing here performs or retries an operation; these
-// ask a question and report the answer.
+// Only the wording and the shape are Windows', so nothing here performs or
+// retries an operation and what Continue means is the caller's to decide
 namespace AccessDialogs {
 
-// Whether a KIO error code means "you are not allowed". Kept here so the
-// listing, the file operations and anything added later agree on which failures
-// get Windows' permission dialogs and which keep KIO's wording.
+// Whether an error code means the user is not allowed, so every call site
+// agrees on which failures get Windows' wording
 bool isPermissionError(int error);
 
-// The error box. `primary` names what failed, `secondary` is the reason
-// underneath it and defaults to "Access is denied.".
+// The secondary line is the reason under the primary one
 void showFailure(QWidget *parent, const QString &title, const QString &primary,
                  const QString &secondary = {});
 
-// The same box for a location that cannot be reached at all, which Windows
-// titles "Location is not available".
+// The same box, titled for a location that cannot be reached
 void showLocationUnavailable(QWidget *parent, const QString &path,
                              const QString &reason = {});
 
-// The elevation prompt. True for Continue, false for Cancel or Escape.
-// `folderName` is the window title, as in Windows.
+// The elevation prompt, true for Continue and false for Cancel or Escape
 bool askForAdminAccess(QWidget *parent, const QString &folderName);
 
-// What the administrator strip says when clicked: what an elevated window can
-// do, and what that means if done carelessly. Informational, so OK only.
+// What the administrator strip says when clicked, informational so OK only
 void showAdministratorWarning(QWidget *parent);
 
 } // namespace AccessDialogs

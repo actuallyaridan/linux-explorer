@@ -1,34 +1,26 @@
 #pragma once
 
-#include <QDialog>
+#include "aero/taskdialog.h"
 #include <QString>
 
 class KJob;
 class QLabel;
 class QPushButton;
-namespace Win7 { class ChevronButton; }
+namespace Aero { class ChevronButton; class LinkLabel; }
 class QProgressBar;
 
-// Windows 7's file operation dialog: a heading, a green progress bar, and a
-// "More details" panel that folds out to show speed, time remaining and the
-// item being worked on. Modeless, as Win7's is: a copy can run for minutes and
-// the user carries on browsing meanwhile.
+// Win7's file operation dialog, with a details panel that folds out
 //
-// The job is watched, never driven. Every number arrives through KJob's
-// signals, and Cancel asks the job to stop rather than tearing anything down,
-// so the operation stays in KIO's hands throughout.
-class FileProgressDialog : public QDialog {
+// Modeless, and the job is watched rather than driven, every number arriving
+// through the job's own signals and Cancel only asking it to stop
+class FileProgressDialog : public Aero::TaskDialog {
     Q_OBJECT
 
 public:
-    // Passed in rather than read from the job's description signal, which KIO
-    // re-emits per file: the header would flicker through 25,000 filenames
-    // instead of naming the two folders, which is what Win7 shows.
+    // Passed in rather than read from the job's description, which is reemitted
+    // per file and would flicker through every filename
     FileProgressDialog(KJob *job, const QString &source, const QString &destination,
                        QWidget *parent = nullptr);
-
-protected:
-    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
     QWidget *buildDetails();
@@ -36,8 +28,7 @@ private:
     void refreshHeading();
     void refreshDetails();
 
-    // "2 Minutes and 15 Seconds", as Win7 words it, or empty when there is not
-    // yet enough to estimate from.
+    // Worded as Win7 words it, and empty when there is nothing to estimate from
     QString remainingText() const;
 
     KJob *m_job = nullptr;
@@ -54,11 +45,11 @@ private:
     QLabel  *m_detailRemainingItems = nullptr;
     QLabel  *m_detailSpeed = nullptr;
 
-    QLabel *m_expander = nullptr;
-    Win7::ChevronButton *m_chevron = nullptr;
+    Aero::LinkLabel *m_expander = nullptr;
+    Aero::ChevronButton *m_chevron = nullptr;
 
-    // KJob reports each piece through its own signal at its own pace, so the
-    // labels are rebuilt from this rather than from whichever fired last.
+    // The job reports each piece through its own signal, so the labels are
+    // rebuilt from this rather than from whichever fired last
     QString m_action;
     QString m_source;
     QString m_destination;

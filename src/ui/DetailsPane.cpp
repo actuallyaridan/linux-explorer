@@ -1,7 +1,9 @@
 #include "DetailsPane.h"
+#include "Assets.h"
 #include "ComputerModel.h"
-#include "IconHelper.h"
-#include "Win7Ui.h"
+#include "aero/icons.h"
+#include "aero/strips.h"
+#include "aero/text.h"
 
 #include <KIO/Global>
 
@@ -16,8 +18,8 @@ DetailsPane::DetailsPane(QWidget *parent)
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
 
-    QHBoxLayout *bar = nullptr;
-    QFrame *panel = Win7::statusPanel(kPaneHeight, &bar);
+    Aero::Strip *panel = Aero::statusPanel(Explorer::Art::DetailsBar, kPaneHeight);
+    QHBoxLayout *bar = panel->row();
 
     m_icon = new QLabel;
     m_icon->setStyleSheet("background: transparent;");
@@ -28,8 +30,8 @@ DetailsPane::DetailsPane(QWidget *parent)
     auto *text = new QVBoxLayout;
     text->setContentsMargins(0, 0, 0, 0);
     text->setSpacing(1);
-    m_primary = Win7::label(QString(), 9, "#1F1F1F");
-    m_secondary = Win7::label(QString(), 9, "#5A5A5A");
+    m_primary = Aero::label(QString(), 9, Aero::Palette::SoftText);
+    m_secondary = Aero::label(QString(), 9, Aero::Palette::MutedText);
     text->addWidget(m_primary);
     text->addWidget(m_secondary);
     bar->addLayout(text, 1);
@@ -47,7 +49,7 @@ void DetailsPane::setContent(const QIcon &icon, const QString &primary,
 
 void DetailsPane::showFolderSummary(int itemCount, const QString &freeSpace)
 {
-    setContent(themeIcon({"folder"}),
+    setContent(Aero::themeIcon({"folder"}),
                itemCount == 1 ? tr("1 item")
                               : tr("%1 items").arg(itemCount),
                freeSpace);
@@ -66,8 +68,7 @@ void DetailsPane::showDrive(const QModelIndex &index)
     if (index.data(ComputerModel::SizeKnownRole).toBool()) {
         const auto total = index.data(ComputerModel::TotalSizeRole).toULongLong();
         const auto available = index.data(ComputerModel::AvailableSizeRole).toULongLong();
-        // Both figures, as Win7 reports a drive: free space alone says nothing
-        // without the size it is free out of.
+        // Both figures, as Win7 reports a drive
         detail += QStringLiteral("  •  %1 free of %2")
                       .arg(KIO::convertSize(available), KIO::convertSize(total));
     }
@@ -77,7 +78,7 @@ void DetailsPane::showDrive(const QModelIndex &index)
 
 void DetailsPane::showMessage(const QString &message)
 {
-    setContent(themeIcon({"dialog-warning", "dialog-error"}), message, QString());
+    setContent(Aero::themeIcon({"dialog-warning", "dialog-error"}), message, QString());
 }
 
 void DetailsPane::showSelection(const QList<KFileItem> &items)
@@ -88,7 +89,7 @@ void DetailsPane::showSelection(const QList<KFileItem> &items)
     if (items.size() == 1) {
         const KFileItem &item = items.first();
         // A directory's size on disk is not the size of what it contains, so
-        // Win7 shows the type instead and computes folder size on demand.
+        // Win7 shows the type instead
         const QString detail = item.isDir()
             ? item.mimeComment()
             : QStringLiteral("%1  •  %2").arg(item.mimeComment(),
@@ -106,11 +107,10 @@ void DetailsPane::showSelection(const QList<KFileItem> &items)
             total += item.size();
     }
 
-    // With a folder in the selection the total covers only the files, and is
-    // labelled as such.
+    // With a folder in the selection the total covers only the files
     const QString detail = anyDirs
         ? QStringLiteral("%1 (files only)").arg(KIO::convertSize(total))
         : KIO::convertSize(total);
-    setContent(themeIcon({"edit-select-all", "folder"}),
+    setContent(Aero::themeIcon({"edit-select-all", "folder"}),
                QStringLiteral("%1 items selected").arg(items.size()), detail);
 }

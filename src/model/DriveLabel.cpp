@@ -14,17 +14,13 @@ QString deviceNode(const KFilePlacesModel *places, const QModelIndex &index)
     if (!places || !index.isValid())
         return {};
 
-    // deviceForIndex hands back an invalid device for any row that is not one,
-    // and an invalid device yields a null interface, so no group-type check is
-    // needed here.
+    // An invalid device yields a null interface, so no type check is needed
     const Solid::Device device = places->deviceForIndex(index);
     const Solid::Block *block = device.as<Solid::Block>();
     if (!block)
         return {};
 
-    // Solid reports the full path ("/dev/nvme0n1p1"), but Windows shows the name
-    // rather than the object it resolves to, so only the last segment belongs
-    // in the brackets.
+    // Solid reports the full path, and only the last segment belongs in brackets
     return block->device().section(QLatin1Char('/'), -1);
 }
 
@@ -38,8 +34,8 @@ QString forPlace(const KFilePlacesModel *places, const QModelIndex &index)
     if (node.isEmpty() || label.isEmpty())
         return label;
 
-    // A label that is already the node, or already carries it, is left alone:
-    // the places model falls back to the node for an unlabelled volume.
+    // The places model falls back to the node for an unlabelled volume, so a
+    // label that already is or carries the node is left alone
     if (label == node
         || label.contains(QLatin1Char('(') + node + QLatin1Char(')'))) {
         return label;

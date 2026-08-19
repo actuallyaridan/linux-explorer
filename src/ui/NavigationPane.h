@@ -12,53 +12,42 @@ class QModelIndex;
 class QTreeWidget;
 class QTreeWidgetItem;
 
-// The left-hand navigation pane, grouped as Windows 7 groups it: Favorites,
-// Libraries, Computer and Network, each collapsible.
+// The left hand pane, grouped as Win7 groups it into favorites, libraries,
+// computer and network
 //
-// The entries come from KFilePlacesModel, the same bookmark store the file
-// dialogs and Dolphin use, and its GroupType is what the four headings are
-// built from. The one split it cannot express is Favorites versus Libraries,
-// KDE filing both under PlacesType, so the standard Documents/Music/Pictures/
-// Videos directories are matched by path.
+// The entries come from the places model, whose own grouping supplies the
+// headings, and favorites against libraries is the one split it cannot express,
+// so the standard user directories are matched by path
 class NavigationPane : public QWidget {
     Q_OBJECT
 
 public:
     explicit NavigationPane(QWidget *parent = nullptr);
 
-    // Shared with the address bar, which resolves its leading icon from the
-    // same entries.
+    // Shared with the address bar, which resolves its icon from these entries
     KFilePlacesModel *placesModel() const;
 
-    // Marks where `url` lies without emitting urlActivated, so the pane can
-    // follow navigation that started elsewhere without looping.
-    //
-    // The tree is never opened up to it: the highlight lands on the deepest row
-    // already on show that leads to the folder, and steps down a level with
-    // each branch the user opens towards it.
+    // Follows navigation that started elsewhere without reporting it back, and
+    // the tree is never opened up to it, the highlight landing on the deepest
+    // row already on show that leads to the folder
     void setCurrentUrl(const QUrl &url);
 
-    // Rebuilds the tree from the places model, keeping expanded folders open:
-    // the model re-emits on every device plug and unplug.
+    // Keeps expanded folders open, the model repopulating on every plug
     void refresh();
 
 Q_SIGNALS:
     void urlActivated(const QUrl &url);
 
-    // From the Recycle Bin's context menu. The window owns FileOps and the
-    // parent widget the confirmation needs.
+    // From the recycle bin's context menu, the window owning the confirmation
     void emptyTrashRequested();
 
-    // From the Computer heading's context menu, so mounting a drive does not
-    // depend on the notification strip appearing.
+    // From the computer heading's context menu
     void connectDrivesRequested();
 
-    // From the Network heading's context menu, where someone looking for a
-    // share on another machine will go first.
+    // From the network heading's context menu
     void mapDriveRequested();
 
-    // Files were dropped onto an entry. Performed by the window, which owns the
-    // KIO facade; the event is still live and must be used before returning.
+    // The event is still live and must be used before returning
     void dropped(QDropEvent *event, const QUrl &destination);
 
 protected:
@@ -71,24 +60,20 @@ private:
                               const QUrl &url = QUrl());
     void addEntry(QTreeWidgetItem *group, const QModelIndex &placeIndex);
 
-    // Local folders get an expander without their subfolders being read: a
-    // placeholder child makes the triangle appear, and the real children are
-    // listed on first open. Scanning up front would stat the first level of
-    // every drive at startup and stall on an unresponsive mount.
+    // A placeholder child makes the triangle appear without reading the
+    // subfolders, since scanning up front would stall on an unresponsive mount
     void addPlaceholderIfExpandable(QTreeWidgetItem *item, const QUrl &url);
     void populateChildren(QTreeWidgetItem *item);
 
-    // Applies a finished scan to the item it was started for, if that item
-    // still exists: scans run off the GUI thread, and the tree may have been
-    // rebuilt underneath one by the time it lands.
+    // Scans run off the main thread, so the item may be gone by the time one
+    // lands
     void applyChildren(const QUrl &url, const QList<QUrl> &children);
 
-    // Moves the highlight to wherever m_currentUrl now shows up. Called again
-    // whenever that can change: a branch opened or closed, or a scan landing.
+    // Called again whenever what is on show can change
     void syncHighlight();
 
-    // The current folder's own row if it is on show, otherwise the deepest
-    // visible one containing it, or nullptr if nothing leads to it.
+    // The folder's own row if on show, otherwise the deepest visible one
+    // containing it, and nothing at all if none leads to it
     QTreeWidgetItem *highlightTarget() const;
 
     void showContextMenu(const QPoint &pos);
@@ -98,18 +83,15 @@ private:
     KFilePlacesModel *m_places = nullptr;
     QTreeWidget      *m_tree = nullptr;
 
-    // Watches every expanded folder, so a directory created or deleted
-    // elsewhere shows up here rather than leaving the pane out of date.
+    // Watches every expanded folder, so changes made elsewhere show up here
     KDirWatch *m_watch = nullptr;
 
-    // So the highlight survives a rebuild, which happens on every device
-    // plug/unplug.
+    // So the highlight survives a rebuild
     QUrl m_currentUrl;
 
-    // Which folders were open before the last rebuild, so they can be opened
-    // again afterwards.
+    // Reopened after a rebuild
     QSet<QUrl> m_expanded;
 
-    // Scans in flight, so re-expanding a folder starts no duplicate.
+    // Scans in flight, so reexpanding a folder starts no duplicate
     QSet<QUrl> m_scanning;
 };

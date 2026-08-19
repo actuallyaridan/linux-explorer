@@ -1,5 +1,7 @@
 #include "FileProgressDialog.h"
-#include "Win7Ui.h"
+#include "aero/buttons.h"
+#include "aero/palette.h"
+#include "aero/text.h"
 
 #include <KIO/Global>
 #include <KJob>
@@ -19,20 +21,15 @@ namespace {
 constexpr int kBarHeight = 19;
 constexpr int kDialogWidth = 440;
 
-// How long an operation may run before the dialog appears. A window that
-// flashes up and vanishes is worse than no window at all; same reasoning as
-// the file list's "Working on it..." page.
+// How long an operation may run before the dialog appears, a window that
+// flashes up and vanishes being worse than none at all
 constexpr int kAppearanceDelay = 500;
 
-// The band behind the heading, sampled from a Windows 7 copy dialog. It runs
-// left to right, not top to bottom: pale blue under the text, deepening to navy
-// at the right where Win7 puts its glass icon, and constant down the band's
-// whole height, so a vertical gradient would be the wrong axis. The stops sit
-// where the slope changes rather than evenly, the fade accelerating toward the
-// dark end. It ends in a hard edge against the white body, with no divider.
+// The band behind the heading, which runs left to right and is constant down
+// its whole height, with the stops placed where the slope changes
 constexpr int kHeaderHeight = 40;
 
-// Elides a path in the middle, as Win7 does: "C:\User...\Documents".
+// Elides a path in the middle, as Win7 does
 QString elidePath(const QString &path, int maxChars = 42)
 {
     if (path.length() <= maxChars)
@@ -45,51 +42,48 @@ QString elidePath(const QString &path, int maxChars = 42)
 
 FileProgressDialog::FileProgressDialog(KJob *job, const QString &source,
                                        const QString &destination, QWidget *parent)
-    : QDialog(parent)
+    : Aero::TaskDialog(parent)
     , m_job(job)
     , m_source(source)
     , m_destination(destination)
 {
     setWindowTitle(tr("Copying..."));
-    // Modeless: a long copy must not lock the window behind it.
+    // Modeless, a long copy not being allowed to lock the window behind it
     setModal(false);
     setAttribute(Qt::WA_DeleteOnClose);
 
-    auto *root = new QVBoxLayout(this);
-    root->setContentsMargins(0, 0, 0, 0);
-    root->setSpacing(0);
+    // The band reaches the dialog's edges, so the content keeps none of the
+    // usual padding and the body below brings its own
+    setContentMargins(QMargins(0, 0, 0, 0));
+    contentLayout()->setSpacing(0);
 
-    auto *content = new QWidget;
-    content->setObjectName(QStringLiteral("progressContent"));
-    content->setStyleSheet("#progressContent { background: #FFFFFF; }");
-
-    auto *contentLayout = new QVBoxLayout(content);
-    contentLayout->setContentsMargins(0, 0, 0, 0);
-    contentLayout->setSpacing(0);
-
-    // The heading sits on its own gradient band, the rest on plain white.
     auto *header = new QWidget;
     header->setObjectName(QStringLiteral("progressHeader"));
     header->setFixedHeight(kHeaderHeight);
     header->setStyleSheet(
-        "#progressHeader { background: qlineargradient(x1:0, y1:0, x2:1, y2:0,"
-        " stop:0 #DCE5F4, stop:0.46 #A0C3E4,"
-        " stop:0.81 #3E668D, stop:1 #093D64); }");
+        QStringLiteral("#progressHeader { background: qlineargradient("
+                       "x1:0, y1:0, x2:1, y2:0,"
+                       " stop:0 %1, stop:0.46 %2,"
+                       " stop:0.81 %3, stop:1 %4); }")
+            .arg(QLatin1String(Aero::Palette::BannerStart),
+                 QLatin1String(Aero::Palette::BannerMid),
+                 QLatin1String(Aero::Palette::BannerFar),
+                 QLatin1String(Aero::Palette::BannerEnd)));
 
     auto *headerLayout = new QHBoxLayout(header);
     headerLayout->setContentsMargins(16, 0, 16, 0);
-    m_heading = Win7::label(tr("Preparing..."), 12, "#000000");
+    m_heading = Aero::label(tr("Preparing..."), 12, Aero::Palette::Text);
     headerLayout->addWidget(m_heading, 1, Qt::AlignVCenter);
-    contentLayout->addWidget(header);
+    contentLayout()->addWidget(header);
 
     auto *body = new QWidget;
     auto *bodyLayout = new QVBoxLayout(body);
     bodyLayout->setContentsMargins(16, 12, 16, 14);
     bodyLayout->setSpacing(10);
-    contentLayout->addWidget(body, 1);
-    contentLayout = bodyLayout;   // everything below goes in the white body
+    contentLayout()->addWidget(body, 1);
+    QVBoxLayout *contentLayout = bodyLayout;   // the white body below the band
 
-    m_summary = Win7::label(QString(), 9);
+    m_summary = Aero::label(QString(), 9);
     m_summary->setTextFormat(Qt::RichText);
     contentLayout->addWidget(m_summary);
 
@@ -103,39 +97,22 @@ FileProgressDialog::FileProgressDialog(KJob *job, const QString &source,
     m_bar->setFixedHeight(kBarHeight);
     contentLayout->addWidget(m_bar);
 
-    root->addWidget(content, 1);
+    m_chevron = new Aero::ChevronButton;
+    addFooterWidget(m_chevron);
 
-    auto *footer = new QWidget;
-    footer->setObjectName(QStringLiteral("progressFooter"));
-    footer->setStyleSheet(
-        "#progressFooter { background: #F0F0F0; border-top: 1px solid #DFDFDF; }");
+    // The caption toggles it too, not just the circle
+    m_expander = new Aero::LinkLabel(tr("More details"));
+    m_expander->setColors(Aero::Palette::Text, Aero::Palette::Text);
+    Aero::setPointSize(m_expander, 9);
+    addFooterWidget(m_expander);
 
-    auto *footerRow = new QHBoxLayout(footer);
-    footerRow->setContentsMargins(12, 10, 12, 10);
-    footerRow->setSpacing(8);
-
-    m_chevron = new Win7::ChevronButton;
-    footerRow->addWidget(m_chevron, 0, Qt::AlignVCenter);
-
-    m_expander = Win7::label(tr("More details"), 9);
-    m_expander->setCursor(Qt::PointingHandCursor);
-    footerRow->addWidget(m_expander, 0, Qt::AlignVCenter);
-    footerRow->addStretch(1);
-
-    auto *cancel = new QPushButton(tr("Cancel"));
-    Win7::setPointSize(cancel, 9);
-    footerRow->addWidget(cancel);
-
-    root->addWidget(footer);
+    auto *cancel = addButton(tr("Cancel"));
 
     connect(m_chevron, &QToolButton::toggled, this, &FileProgressDialog::setExpanded);
-    // The caption toggles it too, so the whole affordance is clickable rather
-    // than just the 20px circle.
-    m_expander->installEventFilter(this);
+    connect(m_expander, &Aero::LinkLabel::clicked, m_chevron, &QToolButton::toggle);
 
-    // Cancel asks the job to stop and lets it report back through result(),
-    // which closes the dialog. Killing quietly would say nothing about a
-    // half-finished operation.
+    // Cancel asks the job to stop and lets it report back, killing it quietly
+    // saying nothing about a half finished operation
     connect(cancel, &QPushButton::clicked, this, [this] {
         if (m_job)
             m_job->kill(KJob::EmitResult);
@@ -148,9 +125,8 @@ FileProgressDialog::FileProgressDialog(KJob *job, const QString &source,
                    const QPair<QString, QString> &field1,
                    const QPair<QString, QString> &field2) {
         m_action = title;
-        // These name the file in flight rather than the operation, so they feed
-        // the details panel's "Name" row rather than the header. CopyJob emits
-        // no infoMessage, so without this that row stays blank.
+        // These name the file in flight, so they feed the details panel rather
+        // than the header, and a copy reports nothing else that would
         const QString current = field1.second.isEmpty() ? field2.second : field1.second;
         if (!current.isEmpty())
             m_currentItem = current.section(QLatin1Char('/'), -1);
@@ -191,8 +167,7 @@ FileProgressDialog::FileProgressDialog(KJob *job, const QString &source,
         refreshDetails();
     });
 
-    // Once the job reports a result it is finished either way and the dialog has
-    // nothing left to show. Errors are the job's UI delegate's to report.
+    // A result means finished either way, errors being the delegate's to report
     connect(job, &KJob::result, this, [this](KJob *) {
         m_job = nullptr;
         if (isVisible())
@@ -201,9 +176,8 @@ FileProgressDialog::FileProgressDialog(KJob *job, const QString &source,
             deleteLater();   // finished before it ever appeared
     });
 
-    // The dialog shows itself rather than being shown by its creator, so a short
-    // operation finishes without one appearing. Re-checked on fire: result()
-    // clears m_job, which is exactly the case this delay exists to catch.
+    // The dialog shows itself, so a short operation finishes without one
+    // appearing, and the job is checked again on the way in
     QTimer::singleShot(kAppearanceDelay, this, [this] {
         if (m_job)
             show();
@@ -223,8 +197,8 @@ QWidget *FileProgressDialog::buildDetails()
     grid->setVerticalSpacing(3);
 
     const auto addRow = [&](int row, const QString &caption, QLabel **valueOut) {
-        grid->addWidget(Win7::label(caption, 9, "#5A5A5A"), row, 0, Qt::AlignTop);
-        *valueOut = Win7::label(QString(), 9);
+        grid->addWidget(Aero::label(caption, 9, Aero::Palette::MutedText), row, 0, Qt::AlignTop);
+        *valueOut = Aero::label(QString(), 9);
         grid->addWidget(*valueOut, row, 1);
     };
 
@@ -242,14 +216,13 @@ QWidget *FileProgressDialog::buildDetails()
 void FileProgressDialog::setExpanded(bool expanded)
 {
     m_details->setVisible(expanded);
-    // Win7 shows one or the other: folded carries the from/to summary, unfolded
-    // spells the same thing out in the grid.
+    // Win7 shows one or the other, the summary or the grid, never both
     m_summary->setVisible(!expanded);
     m_expander->setText(expanded ? tr("Fewer details") : tr("More details"));
     QSignalBlocker blocker(m_chevron);
     m_chevron->setChecked(expanded);
-    // Fixed-width but height follows the panel; without this it keeps the taller
-    // geometry after folding back up.
+    // Fixed width, but the height must follow the panel or the dialog keeps its
+    // taller geometry after folding back up
     adjustSize();
 }
 
@@ -301,9 +274,8 @@ void FileProgressDialog::refreshDetails()
     m_detailTo->setText(elidePath(m_destination));
     m_detailRemainingTime->setText(remainingText());
 
-    // KIO counts a file as processed the moment it starts, so a single-file copy
-    // reports 1 of 1 done while the bytes are still moving. Win7 counts the file
-    // in flight as remaining ("1 (2.96 GB)").
+    // KIO counts a file as processed the moment it starts, where Win7 counts
+    // the file in flight as remaining
     qulonglong left = m_totalItems > m_processedItems ? m_totalItems - m_processedItems : 0;
     if (left == 0 && m_totalItems > 0 && m_totalBytes > m_processedBytes)
         left = 1;
@@ -324,11 +296,3 @@ void FileProgressDialog::refreshDetails()
                                : QString());
 }
 
-bool FileProgressDialog::eventFilter(QObject *watched, QEvent *event)
-{
-    if (watched == m_expander && event->type() == QEvent::MouseButtonRelease) {
-        m_chevron->toggle();
-        return true;
-    }
-    return QDialog::eventFilter(watched, event);
-}

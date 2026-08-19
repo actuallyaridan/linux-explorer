@@ -8,21 +8,10 @@ class QRadioButton;
 class QTreeWidget;
 class QTreeWidgetItem;
 
-// Windows 7's Folder Options, laid out as Windows lays it out: three tabs
-// (General, View, Search), group boxes with radio pairs, the View tab's
-// scrolling tree of advanced settings, a Restore Defaults on every tab, and
-// OK / Cancel / Apply along the bottom.
+// Win7's folder options, laid out as Windows lays it out
 //
-// Titled "Options" rather than "Folder Options": it also carries the
-// Windows-friendly naming switches, which have no Windows counterpart.
-//
-// Only settings that actually do something are present. Reproducing Windows'
-// full list with the extras inert would invite the user to change a checkbox
-// and then wonder what they broke.
-//
-// Nothing is written until OK or Apply, which is what makes Cancel mean
-// something: the settings are read into the widgets once and pushed back out
-// in one go rather than written as each control is touched.
+// Only settings that actually do something are present, and nothing is written
+// until OK or Apply, which is what makes Cancel mean something
 class OptionsDialog : public QDialog {
     Q_OBJECT
 
@@ -30,12 +19,10 @@ public:
     explicit OptionsDialog(QWidget *parent = nullptr);
 
 Q_SIGNALS:
-    // Raised on Apply and OK. The window owns what a change means, most of them
-    // needing something repainted, re-read or re-listed.
+    // Raised on Apply and OK, the window owning what a change means
     void applied();
 
-    // "Apply to Folders" and "Reset Folders". Both are about the view mode,
-    // which the window holds, so the dialog only asks.
+    // Both are about the view mode, which the window holds
     void applyViewToAllFolders();
     void resetAllFolders();
 
@@ -44,23 +31,20 @@ private:
     QWidget *buildViewTab();
     QWidget *buildSearchTab();
 
-    // Fills the controls from the stored settings; Restore Defaults writes the
-    // defaults in first and calls this.
+    // Restoring defaults writes them in first and then calls this
     void load();
 
-    // Writes the controls back out. Called by Apply and OK, never before.
+    // Called by Apply and OK, never before
     void save();
 
-    // Restores the defaults for whichever tab is on show, as Windows' per-tab
-    // button does. Controls only: nothing is stored until Apply or OK.
+    // Whichever tab is on show, as Windows does it, and controls only, since
+    // nothing is stored until Apply or OK
     void restoreDefaults();
 
-    // A checkable row in the View tab's tree, with `parent` as its heading.
     QTreeWidgetItem *addCheck(QTreeWidgetItem *parent, const QString &text,
                               const QString &tooltip = QString());
 
-    // Two mutually exclusive rows, as Win7 renders "Hidden files and folders".
-    // QTreeWidget has no radio state, so the item-changed handler enforces it.
+    // A tree has no radio state, so the item changed handler enforces it
     void addRadioPair(QTreeWidgetItem *parent, const QString &offText,
                       const QString &onText, QTreeWidgetItem **offItem,
                       QTreeWidgetItem **onItem);

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <QDialog>
+#include "aero/taskdialog.h"
 
 class KFilePlacesModel;
 class QCheckBox;
@@ -8,13 +8,11 @@ class QComboBox;
 class QLabel;
 class QPushButton;
 
-// Connect and disconnect drives, through KFilePlacesModel's requestSetup() and
-// requestTeardown() — the same calls the desktop's device notifier makes.
-// Nothing mounts anything directly: privileges, the polkit prompt and the mount
-// itself all live in Solid underneath.
+// Connect and disconnect drives through the same calls the desktop's device
+// notifier makes, the privileges, the prompt and the mount all living beneath
 //
-// The drive holding the running system is never offered for disconnection.
-class MountDialog : public QDialog {
+// The drive holding the running system is never offered
+class MountDialog : public Aero::TaskDialog {
     Q_OBJECT
 
 public:
@@ -26,15 +24,14 @@ private:
     void mountSelected();
     void unmountSelected();
 
-    // The places row currently chosen, or an invalid index. Stored per entry
-    // rather than assumed positional: the places model carries bookmarks and
-    // remote entries between the devices.
+    // Stored per entry rather than assumed positional, the places model
+    // carrying bookmarks and remote entries between the devices
     QModelIndex selectedPlace() const;
 
     KFilePlacesModel *m_places = nullptr;
     QComboBox   *m_drives = nullptr;
     QLabel      *m_status = nullptr;
-    // The desktop's Device Auto-Mount switch, not a setting of this app's own.
+    // The desktop's own auto mount switch rather than a setting of ours
     QCheckBox   *m_autoMount = nullptr;
     QPushButton *m_mount = nullptr;
     QPushButton *m_unmount = nullptr;

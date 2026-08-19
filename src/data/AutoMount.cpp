@@ -12,9 +12,7 @@ namespace AutoMount {
 
 namespace {
 
-// The file the Device Auto-Mount page writes, and its keys. The defaults repeat
-// Plasma's kcfg, all false, so an untouched machine reads here as it behaves
-// there.
+// The file the desktop's auto mount page writes, with its own defaults
 constexpr const char *kFile = "kded_device_automounterrc";
 constexpr const char *kGeneral = "General";
 constexpr const char *kDevices = "Devices";
@@ -23,19 +21,18 @@ constexpr const char *kOnAttach = "AutomountOnPlugin";
 constexpr const char *kOnLogin = "AutomountOnLogin";
 constexpr const char *kEnabled = "AutomountEnabled";
 
-// The per-device overrides, one subgroup of [Devices] per device UDI.
+// One subgroup per device
 constexpr const char *kForceOnAttach = "ForceAttachAutomount";
 constexpr const char *kForceOnLogin = "ForceLoginAutomount";
 
-// NoGlobals: kdeglobals has no say here, and cascading it in would put a
-// desktop-wide file in the write path for one page's setting.
+// The desktop wide config has no say here
 KConfig openConfig()
 {
     return KConfig(QLatin1String(kFile), KConfig::NoGlobals);
 }
 
-// The master switch the KDED module checks at startup, which the page keeps as
-// an OR over everything that could ask for a mount. Computed the same way here.
+// The master switch KDED checks at startup, true if anything at all could ask
+// for a mount
 bool anythingWantsAutomount(KConfig &config)
 {
     const KConfigGroup general = config.group(QLatin1String(kGeneral));
@@ -52,8 +49,8 @@ bool anythingWantsAutomount(KConfig &config)
     return false;
 }
 
-// The two calls the page makes after saving. A module that started with
-// automounting off has unloaded itself, so re-enabling must load it by hand.
+// A module that started with automounting off has unloaded itself, so
+// switching this back on has to load it by hand
 void setKdedModuleLoaded(bool loaded)
 {
     QDBusConnection dbus = QDBusConnection::sessionBus();
@@ -87,8 +84,7 @@ void setOnAttachEnabled(bool enabled)
 
     general.writeEntry(kOnAttach, enabled);
 
-    // Read back through the group rather than reusing `enabled`: the login box
-    // or a per-device override may still want automounting.
+    // Read back, since the login box or an override may still want automounting
     const bool master = anythingWantsAutomount(config);
     general.writeEntry(kEnabled, master);
 

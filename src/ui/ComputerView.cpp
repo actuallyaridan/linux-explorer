@@ -1,7 +1,11 @@
 #include "ComputerView.h"
-#include "CapacityBar.h"
+#include "Assets.h"
+#include "aero/capacitybar.h"
 #include "ComputerModel.h"
-#include "Win7Ui.h"
+#include "aero/text.h"
+#include "aero/listview.h"
+#include "aero/artwork.h"
+#include "aero/palette.h"
 
 #include <KIO/Global>
 
@@ -24,30 +28,26 @@
 
 namespace {
 
-// Measured from a Windows 7 screenshot: its bars sit 254px apart with a 250px
-// highlight box, so the tile is 250 wide with a 4px gap.
+// A 250px tile with a 4px gap
 constexpr int kTileWidth = 250;
 constexpr int kTileSpacingH = 4;
 constexpr int kTileSpacingV = 8;
 
-// Icon to text, and the gaps between the name, the bar and the figures.
 constexpr int kIconGap = 10;
 constexpr int kLineGap = 3;
 
-// As tall as its stacked lines or its icon, whichever wins.
 int tileHeight(const QFontMetrics &fm)
 {
-    const int text = fm.height() * 2 + 2 * kLineGap + Win7::kCapacityBarHeight;
+    const int text = fm.height() * 2 + 2 * kLineGap + Aero::kCapacityBarHeight;
     return qMax(48, text) + 8;
 }
 
 int contentHeight(const QFontMetrics &fm)
 {
-    const int text = fm.height() + kLineGap + Win7::kCapacityBarHeight;
+    const int text = fm.height() + kLineGap + Aero::kCapacityBarHeight;
     return qMax(32, text) + 10;
 }
 
-// The row of a model, proxy or not, whose drive is at `url`.
 QModelIndex indexForUrl(const QAbstractItemModel *model, const QUrl &url)
 {
     if (!url.isValid())
@@ -60,9 +60,8 @@ QModelIndex indexForUrl(const QAbstractItemModel *model, const QUrl &url)
     return {};
 }
 
-// One heading's worth of drives. A filter rather than a grouping proxy because
-// the headings are separate views, not rows; see the ComputerView class
-// comment. Does no sorting of its own, so the order stays ComputerModel's.
+// One heading's worth of drives, with no sorting of its own so the order stays
+// the drive model's
 class DriveFilter : public QSortFilterProxyModel {
 public:
     DriveFilter(bool removable, QObject *parent = nullptr)
@@ -83,9 +82,8 @@ private:
     bool m_removable;
 };
 
-// Draws the two layouts that carry a capacity bar. The four icon sizes, List
-// and Details show no bar in Win7 either, so they go through
-// QStyledItemDelegate untouched.
+// The two layouts that carry a capacity bar, the rest showing none in Win7
+// either and going through the base delegate untouched
 class DriveDelegate : public QStyledItemDelegate {
 public:
     enum Layout { Standard, Tile, Content };
@@ -120,9 +118,8 @@ public:
         QStyleOptionViewItem opt = option;
         initStyleOption(&opt, index);
 
-        // The style still draws the row, so a drive picks out the same way a
-        // file does. Only the content is ours, hence stripping the icon and
-        // text out of the option first.
+        // The style still draws the row, so only the content is ours, hence
+        // stripping the icon and text out first
         opt.text.clear();
         opt.icon = QIcon();
         opt.features &= ~QStyleOptionViewItem::HasDecoration;
@@ -131,15 +128,14 @@ public:
 
         const bool selected = opt.state & QStyle::State_Selected;
         const QColor primary = selected ? opt.palette.color(QPalette::HighlightedText)
-                                        : QColor(0x00, 0x00, 0x00);
+                                        : Aero::Palette::rgb(Aero::Palette::Text);
         const QColor secondary = selected ? opt.palette.color(QPalette::HighlightedText)
-                                          : QColor(0x5A, 0x5A, 0x5A);
+                                          : Aero::Palette::rgb(Aero::Palette::MutedText);
 
         const int iconSize = (m_layout == Tile) ? 48 : 32;
         const QRect body = option.rect.adjusted(3, 4, -3, -4);
 
         const QIcon icon = qvariant_cast<QIcon>(index.data(Qt::DecorationRole));
-        // Centred against the lines beside it rather than pinned to the top.
         const QRect iconRect(body.left(),
                              body.top() + (body.height() - iconSize) / 2,
                              iconSize, iconSize);
@@ -154,14 +150,13 @@ public:
         const auto total = index.data(ComputerModel::TotalSizeRole).toULongLong();
         const auto available = index.data(ComputerModel::AvailableSizeRole).toULongLong();
 
-        // A pseudo-filesystem can report a zero total.
+        // A pseudo filesystem can report nothing at all
         const int percentUsed = (known && total > 0)
             ? qRound(100.0 * double(total - available) / double(total))
             : 0;
 
         const QString name = index.data(Qt::DisplayRole).toString();
-        // Unmounted or unreadable: still listed, since it exists, but with no
-        // honest number to draw a bar from.
+        // Unmounted or unreadable, so listed but with no figure to draw from
         const QString figures = known
             ? QObject::tr("%1 free of %2").arg(KIO::convertSize(available),
                                                KIO::convertSize(total))
@@ -169,15 +164,14 @@ public:
 
         const QFontMetrics fm(opt.font);
         const int lineHeight = fm.height();
-        const int barWidth = qMin(Win7::kCapacityBarWidth, text.width());
+        const int barWidth = qMin(Aero::kCapacityBarWidth, text.width());
 
         painter->save();
         painter->setFont(opt.font);
 
         if (m_layout == Tile) {
-            // Name, bar, figures, centred against the icon beside them.
             const int block = known
-                ? lineHeight * 2 + 2 * kLineGap + Win7::kCapacityBarHeight
+                ? lineHeight * 2 + 2 * kLineGap + Aero::kCapacityBarHeight
                 : lineHeight * 2 + kLineGap;
             int y = text.top() + (text.height() - block) / 2;
 
@@ -188,10 +182,10 @@ public:
             y += lineHeight + kLineGap;
 
             if (known) {
-                Win7::paintCapacityBar(
-                    painter, QRect(text.left(), y, barWidth, Win7::kCapacityBarHeight),
-                    percentUsed);
-                y += Win7::kCapacityBarHeight + kLineGap;
+                Aero::paintCapacityBar(
+                    painter, QRect(text.left(), y, barWidth, Aero::kCapacityBarHeight),
+                    percentUsed, Explorer::Art::capacityBar());
+                y += Aero::kCapacityBarHeight + kLineGap;
             }
 
             painter->setPen(secondary);
@@ -199,13 +193,12 @@ public:
                               Qt::AlignLeft | Qt::AlignVCenter,
                               fm.elidedText(figures, Qt::ElideRight, text.width()));
         } else {
-            // Name over its bar on the left, figures at the far edge, where
-            // Win7's content rows put their metadata.
+            // Name over its bar on the left, figures at the far edge
             const int figuresWidth = qMin(fm.horizontalAdvance(figures) + 16,
                                           text.width() / 2);
             const int leftWidth = qMax(60, text.width() - figuresWidth);
             const int block = lineHeight
-                + (known ? kLineGap + Win7::kCapacityBarHeight : 0);
+                + (known ? kLineGap + Aero::kCapacityBarHeight : 0);
             const int y = text.top() + (text.height() - block) / 2;
 
             painter->setPen(primary);
@@ -213,11 +206,11 @@ public:
                               Qt::AlignLeft | Qt::AlignVCenter,
                               fm.elidedText(name, Qt::ElideRight, leftWidth));
             if (known) {
-                Win7::paintCapacityBar(
+                Aero::paintCapacityBar(
                     painter,
                     QRect(text.left(), y + lineHeight + kLineGap,
-                          qMin(barWidth, leftWidth), Win7::kCapacityBarHeight),
-                    percentUsed);
+                          qMin(barWidth, leftWidth), Aero::kCapacityBarHeight),
+                    percentUsed, Explorer::Art::capacityBar());
             }
 
             painter->setPen(secondary);
@@ -235,10 +228,8 @@ private:
     int m_rowWidth = 400;
 };
 
-// One section's drives. The page scrolls as a whole, so a section is laid out
-// at exactly the height its drives need (see sizeHint) and never scrolls on its
-// own; leaving its scroll bars off also stops its height and its scroll bar
-// chasing each other on every resize.
+// One section's drives, and the page scrolls as a whole so a section is laid
+// out at exactly the height its drives need and never scrolls on its own
 class DriveList : public QListView {
 public:
     explicit DriveList(QWidget *parent = nullptr)
@@ -249,18 +240,15 @@ public:
         setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     }
 
-    // Called with +1 or -1 when an arrow key ran off the end of this section.
+    // Called when an arrow key ran off either end of this section
     std::function<bool(int)> onLeaveEdge;
 
-    // Content rows span the viewport, so their width is restated on resize.
+    // Content rows span the viewport, so their width is restated on resize
     void setFullWidthRows(bool on) { m_fullWidthRows = on; }
 
-    // Worked out from the grid rather than asked of the view.
-    // QListView::viewportSizeHint() reports the layout the view has already
-    // performed, not the one for the width this section is about to be given,
-    // so a section that had wrapped onto a second row was handed a single row's
-    // height and the wrapped drives were clipped. Every input is known here
-    // anyway, applyMode setting the grid itself.
+    // From the grid rather than the view's own hint, which reports the layout
+    // already performed rather than the one for the width about to be given,
+    // and so clipped a section that had wrapped
     QSize sizeHint() const override
     {
         const int count = model() ? model()->rowCount(rootIndex()) : 0;
@@ -277,7 +265,6 @@ public:
             return QSize(cell, rows * qMax(1, grid.height()));
         }
 
-        // One column: List and Content both run straight down.
         const int rowHeight = grid.height() > 0 ? grid.height()
                                                 : qMax(1, sizeHintForRow(0));
         return QSize(width, count * rowHeight);
@@ -294,7 +281,6 @@ protected:
             setGridSize(QSize(viewport()->width(), gridSize().height()));
         }
 
-        // A narrower page wraps the tiles onto more rows.
         updateGeometry();
     }
 
@@ -306,8 +292,8 @@ protected:
         if (!onLeaveEdge || !before.isValid() || currentIndex() != before)
             return;
 
-        // The cursor did not move, so it was already at this section's edge.
-        // Win7's groups read as one continuous list to the arrow keys.
+        // The cursor did not move, so it was already at this section's edge,
+        // and Win7's groups read as one continuous list to the arrow keys
         switch (event->key()) {
         case Qt::Key_Down:
         case Qt::Key_Right:
@@ -342,8 +328,8 @@ ComputerView::ComputerView(ComputerModel *model, QWidget *parent)
     buildSections();
     buildDetailsView();
 
-    // The section filters connect to the model before this does, and direct
-    // connections run in order, so every proxy has already reset by now.
+    // The section filters connect first and direct connections run in order,
+    // so every proxy has already reset by now
     connect(m_model, &QAbstractItemModel::modelReset, this, [this] {
         updateSections();
         restoreSelection();
@@ -359,11 +345,11 @@ void ComputerView::buildSections()
     m_scroll->setWidgetResizable(true);
     m_scroll->setFrameShape(QFrame::NoFrame);
     m_scroll->setObjectName(QStringLiteral("computerScroll"));
-    m_scroll->setStyleSheet("#computerScroll { background: #FFFFFF; }");
+    m_scroll->setStyleSheet(Aero::panelSheet(m_scroll->objectName(), Aero::Palette::Surface));
 
     auto *content = new QWidget;
     content->setObjectName(QStringLiteral("computerContent"));
-    content->setStyleSheet("#computerContent { background: #FFFFFF; }");
+    content->setStyleSheet(Aero::panelSheet(content->objectName(), Aero::Palette::Surface));
 
     auto *layout = new QVBoxLayout(content);
     layout->setContentsMargins(18, 14, 18, 14);
@@ -390,9 +376,9 @@ void ComputerView::addSection(QVBoxLayout *layout, const QString &title, bool re
     auto *heading = new QHBoxLayout;
     heading->setContentsMargins(0, 0, 0, 0);
     heading->setSpacing(8);
-    section.heading = Win7::label(title, 11, "#1A3C7A");
+    section.heading = Aero::label(title, 11, Aero::Palette::HeadingText);
     heading->addWidget(section.heading, 0, Qt::AlignVCenter);
-    heading->addWidget(Win7::hairline(), 1, Qt::AlignVCenter);
+    heading->addWidget(Aero::hairline(), 1, Qt::AlignVCenter);
     box->addLayout(heading);
 
     section.filter = new DriveFilter(removable, this);
@@ -410,10 +396,9 @@ void ComputerView::addSection(QVBoxLayout *layout, const QString &title, bool re
     list->setResizeMode(QListView::Adjust);
     list->setSelectionRectVisible(true);
     list->setUniformItemSizes(true);
-    // The details pane reports one drive, and eject, disconnect and rename all
-    // act on one.
+    // Everything downstream acts on a single drive
     list->setSelectionMode(QAbstractItemView::SingleSelection);
-    Win7::setPointSize(list, 9);
+    Aero::setPointSize(list, 9);
     box->addWidget(list);
 
     connect(list, &QAbstractItemView::activated, this, [this](const QModelIndex &index) {
@@ -425,15 +410,14 @@ void ComputerView::addSection(QVBoxLayout *layout, const QString &title, bool re
         const QModelIndex index = list->indexAt(pos);
         if (index.isValid())
             setSelectedUrl(urlAt(index));
-        // An invalid index is the empty space past the last drive, which Win7
-        // still answers with the page's own menu.
+        // The empty space past the last drive still gets the page's own menu
         Q_EMIT contextMenuRequested(urlAt(index), list->viewport()->mapToGlobal(pos));
     });
     connect(list->selectionModel(), &QItemSelectionModel::selectionChanged, this,
             [this, list] {
         const QModelIndexList picked = list->selectionModel()->selectedIndexes();
         // An empty selection is this view being cleared as another takes the
-        // highlight, not the user dropping it.
+        // highlight rather than the user dropping it
         if (!picked.isEmpty())
             setSelectedUrl(urlAt(picked.first()));
     });
@@ -450,12 +434,12 @@ void ComputerView::buildDetailsView()
     m_details = new QTreeView;
     m_details->setModel(m_model);
     m_details->setContextMenuPolicy(Qt::CustomContextMenu);
-    Win7::setPointSize(m_details, 9);
-    Win7::configureListTree(m_details);
+    Aero::setPointSize(m_details, 9);
+    Aero::configureListTree(m_details);
     m_details->setSelectionMode(QAbstractItemView::SingleSelection);
 
     // Win7 gives every column a fixed width and leaves the rest of the row
-    // empty rather than stranding the last column's values at the window edge.
+    // empty rather than stranding the last column at the window edge
     QHeaderView *header = m_details->header();
     header->setStretchLastSection(false);
     header->setSectionsMovable(true);
@@ -502,8 +486,7 @@ void ComputerView::focusView()
         return;
     }
 
-    // The first section with drives in it: an empty one is hidden, and focusing
-    // a hidden widget does nothing.
+    // The first section with drives in it, focusing a hidden one doing nothing
     for (const Section &section : std::as_const(m_sections)) {
         if (section.view && section.view->isVisible()) {
             section.view->setFocus(Qt::TabFocusReason);
@@ -533,10 +516,8 @@ void ComputerView::applyMode()
 
         switch (m_mode) {
         case Settings::ViewMode::List:
-            // Win7's List wraps to the right, which a section cannot: the page
-            // scrolls vertically, so a wrapped column would run off the side
-            // unreachably. One column instead, which is what Win7's List looks
-            // like whenever the drives fit the window's height anyway.
+            // Win7 wraps this mode to the right, which a section cannot, the
+            // page scrolling down so a wrapped column would run off the side
             delegate->setLayout(DriveDelegate::Standard);
             view->setViewMode(QListView::ListMode);
             view->setFlow(QListView::TopToBottom);
@@ -567,8 +548,7 @@ void ComputerView::applyMode()
             break;
 
         default:
-            // The four icon sizes. The grid leaves room for two lines of wrapped
-            // name beneath the icon, so a long drive label is not elided to one.
+            // Room for two lines of wrapped name beneath the icon
             delegate->setLayout(DriveDelegate::Standard);
             view->setViewMode(QListView::IconMode);
             view->setFlow(QListView::LeftToRight);
@@ -590,7 +570,7 @@ void ComputerView::updateSections()
 {
     for (const Section &section : std::as_const(m_sections)) {
         const int count = section.filter->rowCount();
-        // A heading with no drives under it is not drawn at all.
+        // A heading with no drives under it is not drawn at all
         section.container->setVisible(count > 0);
         section.heading->setText(
             QStringLiteral("%1 (%2)").arg(section.title).arg(count));
@@ -627,8 +607,8 @@ void ComputerView::restoreSelection()
     if (m_syncing)
         return;
 
-    // Restating it clears the other views, which re-enters here through their
-    // own selection signals.
+    // Restating it clears the other views, reentering here through their own
+    // selection signals
     m_syncing = true;
     for (QAbstractItemView *view : allViews()) {
         QItemSelectionModel *selection = view->selectionModel();
@@ -662,7 +642,7 @@ bool ComputerView::stepToNeighbour(QListView *from, int direction)
         if (!section.container->isVisible() || rows == 0)
             continue;
 
-        // Entering from above lands on the first drive, from below on the last.
+        // Entering from above lands on the first drive and from below the last
         const QModelIndex target = section.filter->index(
             direction > 0 ? 0 : rows - 1, ComputerModel::Name);
         section.view->setFocus();

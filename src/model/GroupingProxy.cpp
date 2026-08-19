@@ -10,7 +10,7 @@
 
 namespace {
 
-// Windows 7's size buckets, in the order it lists them.
+// Win7's size buckets, in the order it lists them
 struct SizeBucket {
     KIO::filesize_t limit;
     const char *title;
@@ -25,8 +25,8 @@ const SizeBucket kSizeBuckets[] = {
     {128ull * 1024 * 1024, QT_TRANSLATE_NOOP("GroupingProxy", "Huge (16 - 128 MB)")},
 };
 
-// Internal ids distinguish the two kinds of index. A heading carries 0; a file
-// carries its heading's position plus one, which is what parent() reads back.
+// A heading carries an internal id of zero and a file its heading's position
+// plus one, which is what the parent lookup reads back
 constexpr quintptr kGroupId = 0;
 
 } // namespace
@@ -36,8 +36,7 @@ GroupingProxy::GroupingProxy(DirectoryModel *model, QObject *parent)
     , m_model(model)
     , m_rebuildTimer(new QTimer(this))
 {
-    // Long enough to swallow a burst of per-file source changes, short enough
-    // that a real one still shows up immediately.
+    // Long enough to swallow a burst of source changes
     m_rebuildTimer->setSingleShot(true);
     m_rebuildTimer->setInterval(30);
     connect(m_rebuildTimer, &QTimer::timeout, this, &GroupingProxy::rebuild);
@@ -57,8 +56,6 @@ void GroupingProxy::setSourceModel(QAbstractItemModel *sourceModel)
     QAbstractProxyModel::setSourceModel(sourceModel);
 
     if (sourceModel) {
-        // See the header on why this is not incremental, and scheduleRebuild on
-        // why it is debounced.
         connect(sourceModel, &QAbstractItemModel::modelReset,
                 this, &GroupingProxy::scheduleRebuild);
         connect(sourceModel, &QAbstractItemModel::rowsInserted,
@@ -68,10 +65,9 @@ void GroupingProxy::setSourceModel(QAbstractItemModel *sourceModel)
         connect(sourceModel, &QAbstractItemModel::layoutChanged,
                 this, &GroupingProxy::scheduleRebuild);
 
-        // A data change is not structural and must not reset: the preview
-        // generator replaces an icon per thumbnail, which wiped the selection
-        // several times a second while a folder rendered. Forwarded row by row,
-        // since a source range can straddle several groups.
+        // A data change must not reset, or a rendering folder wipes the
+        // selection once per thumbnail, and it goes row by row since a source
+        // range can straddle several groups
         connect(sourceModel, &QAbstractItemModel::dataChanged, this,
                 [this](const QModelIndex &topLeft, const QModelIndex &bottomRight,
                        const QList<int> &roles) {
@@ -116,7 +112,7 @@ QString GroupingProxy::groupTitleFor(int sourceRow, int *rank) const
 
     switch (m_groupColumn) {
     case DirectoryModel::Type:
-        // Folders group together above the file types, as they sort.
+        // Folders group together above the file types, as they sort
         if (item.isDir()) {
             *rank = -1;
             return tr("File folder");
@@ -162,7 +158,7 @@ QString GroupingProxy::groupTitleFor(int sourceRow, int *rank) const
 
     case DirectoryModel::Name:
     default: {
-        // Win7 groups names by their first character, folders included.
+        // Win7 groups names by their first character, folders included
         const QString name = sourceIndex.data(Qt::DisplayRole).toString();
         if (name.isEmpty())
             return tr("Unspecified");
@@ -186,8 +182,8 @@ void GroupingProxy::rebuild()
     QHash<int, QPair<int, int>> lookup;
     computeGroups(&groups, &lookup);
 
-    // Nothing moved, so no reset. The common case while a folder renders its
-    // thumbnails, and what keeps a selection alive through it.
+    // Nothing moved, so no reset, which is what keeps a selection alive while a
+    // folder renders its thumbnails
     if (groups == m_groups)
         return;
 
@@ -207,9 +203,8 @@ void GroupingProxy::computeGroups(QList<Group> *outGroups,
     if (!source || m_groupColumn < 0)
         return;
 
-    // Built in source order, so the groups follow their first member and the
-    // files keep the listing's sort within each. The ranks then reorder the
-    // groups themselves where the grouping has an order of its own.
+    // Built in source order, so files keep the listing's sort within a group,
+    // and the ranks then reorder the groups themselves
     QHash<QString, int> byTitle;
     QList<int> ranks;
     QList<Group> groups;
@@ -232,8 +227,7 @@ void GroupingProxy::computeGroups(QList<Group> *outGroups,
         groups[groupIndex].rows.append(row);
     }
 
-    // Stable, so groups sharing a rank keep their discovery order, which for
-    // names is already alphabetical.
+    // Stable, so groups sharing a rank keep their discovery order
     QList<int> order;
     order.reserve(groups.size());
     for (int i = 0; i < groups.size(); ++i)
@@ -261,7 +255,6 @@ QModelIndex GroupingProxy::index(int row, int column, const QModelIndex &parent)
     if (!parent.isValid())
         return createIndex(row, column, kGroupId);
 
-    // A file, carrying its heading's position plus one so parent() can get back.
     if (parent.internalId() != kGroupId)
         return {};   // files have no children
     return createIndex(row, column, quintptr(parent.row() + 1));
@@ -302,7 +295,7 @@ QModelIndex GroupingProxy::mapToSource(const QModelIndex &proxyIndex) const
 {
     if (!proxyIndex.isValid() || !sourceModel())
         return {};
-    // A heading is invented by this proxy; there is no source row behind it.
+    // A heading is invented here and has no source row behind it
     if (proxyIndex.internalId() == kGroupId)
         return {};
 
@@ -339,7 +332,6 @@ QVariant GroupingProxy::data(const QModelIndex &index, int role) const
 
         switch (role) {
         case Qt::DisplayRole:
-            // Win7 puts the count beside the heading.
             return index.column() == 0
                 ? QStringLiteral("%1 (%2)").arg(group.title).arg(group.rows.size())
                 : QVariant();
@@ -368,8 +360,7 @@ Qt::ItemFlags GroupingProxy::flags(const QModelIndex &index) const
     if (!index.isValid())
         return Qt::NoItemFlags;
 
-    // A heading collapses its group on a click but is not selectable: there is
-    // nothing behind it for Delete to act on.
+    // Not selectable, there being nothing behind a heading for Delete
     if (index.internalId() == kGroupId)
         return Qt::ItemIsEnabled;
 

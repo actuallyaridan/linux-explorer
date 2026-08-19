@@ -8,12 +8,10 @@ namespace Settings {
 
 namespace {
 
-// How many folders keep a remembered view mode, so a user who browses a lot does
-// not accumulate an ever-growing config file. Windows trims its shell bags too.
+// How many folders keep a remembered view mode
 constexpr int kMaxRememberedFolders = 400;
 
-// How many typed addresses the address bar's dropdown keeps, which is about
-// Win7's own list length.
+// About Win7's own list length
 constexpr int kMaxRecentPaths = 25;
 
 QString key(const char *name)
@@ -21,8 +19,7 @@ QString key(const char *name)
     return QStringLiteral("View/") + QLatin1String(name);
 }
 
-// QSettings treats '/' as a group separator, so a raw path would explode into
-// one nested group per segment. Percent-encoding keeps each folder to one key.
+// QSettings treats a slash as a group separator, so paths are percent encoded
 QString folderKey(const QUrl &url)
 {
     return QString::fromLatin1(url.toEncoded().toPercentEncoding());
@@ -165,8 +162,7 @@ void setSearchSubfolders(bool recursive)
 void clearRememberedViewModes()
 {
     QSettings s;
-    // The whole group at once: removing the keys would leave it behind, and
-    // nothing else is stored under it.
+    // The whole group, since removing the keys alone would leave it behind
     s.remove(QStringLiteral("FolderViews"));
 }
 
@@ -181,7 +177,7 @@ void addRecentPath(const QString &path)
         return;
 
     QStringList paths = recentPaths();
-    // Re-typing a path moves it to the top rather than adding a duplicate.
+    // Retyping a path moves it to the top rather than adding a duplicate
     paths.removeAll(path);
     paths.prepend(path);
     while (paths.size() > kMaxRecentPaths)
@@ -235,9 +231,8 @@ void setViewModeFor(const QUrl &url, ViewMode mode)
     QSettings s;
     s.beginGroup(QStringLiteral("FolderViews"));
 
-    // Trimmed before inserting, so the file never exceeds the cap. QSettings has
-    // no insertion order and so no true LRU to evict by; dropping an arbitrary
-    // quarter keeps this to one sweep per hundred new folders.
+    // QSettings has no insertion order and so nothing to evict by age, and
+    // dropping an arbitrary quarter keeps this to one sweep per hundred folders
     const QStringList existing = s.childKeys();
     const QString entry = folderKey(url);
     if (existing.size() >= kMaxRememberedFolders && !existing.contains(entry)) {

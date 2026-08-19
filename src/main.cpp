@@ -9,34 +9,34 @@
 #include <QUrl>
 #include "FileManagerService.h"
 #include "MainWindow.h"
-#include "IconHelper.h"
+#include "Assets.h"
+#include "aero/buttons.h"
+#include "aero/icons.h"
 #include "Locations.h"
 #include <AeroQt/stylesheet.h>
 
-// We want the desktop theme's native scroll bars rather than AeroQt's skinned
-// ones, and they cannot be rescued per-widget: while an app-wide stylesheet is
-// active, Qt wraps even an explicitly setStyle()'d widget back into the
-// stylesheet engine. Removing the rules is the only bypass; with nothing
-// matching, the engine delegates to the real Qt style.
+// Native scroll bars rather than the theme's skinned ones
 //
-// Kept identical to the Control Panel's copy so the two apps scroll the same.
+// They cannot be rescued one widget at a time, since while an application wide
+// stylesheet is active Qt wraps even an explicitly restyled widget back into the
+// stylesheet engine, so removing the rules is the only bypass
 static QString withoutScrollBarRules(QString qss)
 {
-    // Drop comments first so a brace inside one can't derail the block scan.
+    // Comments first, so a brace inside one cannot derail the block scan
     static const QRegularExpression comment(
         QStringLiteral(R"(/\*.*?\*/)"),
         QRegularExpression::DotMatchesEverythingOption);
     qss.remove(comment);
 
-    // QSS has no nested braces: walk "selectors { body }" blocks and drop the
-    // selectors mentioning QScrollBar, keeping any others sharing the block.
+    // A stylesheet has no nested braces, so walk the blocks and drop the
+    // selectors naming a scroll bar
     QString out;
     out.reserve(qss.size());
     int pos = 0;
     while (pos < qss.size()) {
         const int open = qss.indexOf(QLatin1Char('{'), pos);
         const int close = open < 0 ? -1 : qss.indexOf(QLatin1Char('}'), open);
-        if (close < 0) {                       // trailing non-block text
+        if (close < 0) {                       // trailing text outside any block
             out += QStringView(qss).mid(pos);
             break;
         }
@@ -54,11 +54,9 @@ static QString withoutScrollBarRules(QString qss)
     return out;
 }
 
-// Re-strips whenever the rules reappear: AeroQt re-applies its sheet when the
-// desktop theme flips between Aero and non-Aero, which reaches us as
-// StyleChange. Deferred through a queued single-shot, since mutating the
-// stylesheet mid-delivery would re-enter the style engine; a no-op once the
-// rules are gone, so it cannot loop.
+// The theme reapplies its sheet whenever the desktop changes, which arrives as
+// a style change, and the strip is deferred since mutating the stylesheet
+// during delivery would reenter the style engine
 class ScrollBarUnstyler : public QObject {
 public:
     explicit ScrollBarUnstyler(QApplication *app) : QObject(app), m_app(app)
@@ -93,16 +91,15 @@ private:
     bool m_pending = false;
 };
 
-// The locations named on the command line, which the .desktop entry's %U also
-// arrives through. Bare paths are accepted alongside URLs: an argument from a
-// shell is far more likely to be ./Downloads than a file:// URL.
+// Bare paths are accepted alongside locations, an argument from a shell being
+// far more likely to be a relative path
 static QList<QUrl> urlsFrom(const QStringList &arguments)
 {
     QList<QUrl> urls;
     urls.reserve(arguments.size());
     for (const QString &argument : arguments) {
-        // A quoted "~" and the .desktop entry's Open Home Folder action arrive
-        // unexpanded, and QUrl would read it as a relative path named "~".
+        // A quoted home shorthand arrives unexpanded and would otherwise be
+        // read as a relative path of that name
         QString path = argument;
         if (path == QLatin1String("~"))
             path = QDir::homePath();
@@ -122,17 +119,16 @@ int main(int argc, char *argv[]) {
     app.setOrganizationName("explorer");
     app.setApplicationName("explorer");
     app.setApplicationVersion(QStringLiteral("0.1"));
-    // No setApplicationDisplayName: Qt appends it to every window/dialog title,
-    // and Explorer's title is just the folder name.
-    app.setWindowIcon(themeIcon({"system-file-manager", "folder"}));
+    // No display name is set, Qt appending one to every title where Explorer's
+    // is just the folder name
+    app.setWindowIcon(Aero::themeIcon({"system-file-manager", "folder"}));
 
     QCommandLineParser parser;
     parser.setApplicationDescription(
         QStringLiteral("The Windows 7 Explorer, on Linux."));
     parser.addHelpOption();
     parser.addVersionOption();
-    // Windows spells this /select: open the containing folder with the file
-    // already highlighted.
+    // Windows spells this select
     QCommandLineOption selectOption(
         QStringList{QStringLiteral("s"), QStringLiteral("select")},
         QStringLiteral("Open each argument's parent folder with the argument "
@@ -147,28 +143,33 @@ int main(int argc, char *argv[]) {
     const bool reveal = parser.isSet(selectOption);
     const QList<QUrl> urls = urlsFrom(parser.positionalArguments());
 
-    // Normalised to full URLs before anything else sees them: the handoff and
-    // the D-Bus interface both speak URIs, and *this* process's working
-    // directory is the only place a relative path can correctly resolve.
+    // Normalised before anything else sees them, the handoff and the bus
+    // interface both speaking locations, and this process's working directory
+    // being the only place a relative path can correctly resolve
     QStringList uris;
     uris.reserve(urls.size());
     for (const QUrl &url : urls)
         uris.append(url.toString());
 
-    // One Explorer per session, and it is the one holding the bus name. A
-    // second launch is a request aimed at the first: hand the arguments over
-    // and get out of the way. See FileManagerService for why this is not the
-    // shared FileManager1 name.
+    // One Explorer per session, so a second launch hands its arguments to the
+    // one holding the bus name and gets out of the way
     auto *service = new FileManagerService(&app);
     if (!service->claim()) {
         if (FileManagerService::forward(uris, reveal))
             return 0;
-        // The running instance did not answer; carry on and open a window here
-        // rather than leave the user staring at nothing.
+        // The running instance did not answer, so open a window here
     }
 
     Aero::registerStylesheet(&app);
-    new ScrollBarUnstyler(&app);   // native scroll bars; owned by the app
+    new ScrollBarUnstyler(&app);   // native scroll bars, owned by the app
+
+    // The chrome has no opinion on what its icons degrade to
+    Aero::setIconFallbacks({QStringLiteral("system-file-manager"),
+                            QStringLiteral("folder")});
+
+    // Likewise the pill, which the chrome draws and this application supplies
+    Aero::MenuButton::setPillArt(QLatin1String(Explorer::Art::CommandHover),
+                                 QLatin1String(Explorer::Art::CommandPress));
 
     const QString startupId = FileManagerService::startupId();
     if (reveal)
@@ -176,9 +177,8 @@ int main(int argc, char *argv[]) {
     else
         service->ShowFolders(uris, startupId);
 
-    // ShowFolders opens Computer when handed nothing, so the plain launch is
-    // covered; a --select naming only files that no longer exist can still get
-    // here with no window, which would be a process the user cannot see or quit.
+    // A reveal naming only files that no longer exist can get here with no
+    // window, which would be a process the user cannot see or quit
     if (MainWindow::openWindowCount() == 0)
         MainWindow::openWindow(Locations::computer(), {}, startupId);
 

@@ -9,27 +9,21 @@
 class DirectoryModel;
 class QTimer;
 
-// Windows 7's "Group by", as a proxy turning the flat listing into one level of
-// headings with the files underneath.
+// Win7's group by, turning the flat listing into headings with the files
+// underneath
 //
-// A tree is the only shape Qt's item views have for this: QSortFilterProxyModel
-// cannot invent rows, so the headings are real rows with the files as children,
-// drawn by the details view's expanders. That is also why grouping applies to
-// the details view alone; QListView shows a single level and would hide every
-// file inside its heading.
-//
-// The groups are rebuilt wholesale on any source change rather than patched.
-// Working out which group an inserted row joins, and whether that group is new,
-// is where a proxy like this usually goes wrong, and a directory listing is
-// small enough that rebuilding costs less than the bookkeeping.
+// A tree is the only shape Qt's views have for this, which is why grouping
+// applies to the details view alone, and the groups are rebuilt wholesale on
+// any source change since a listing is small enough that it costs less than
+// patching, which is where a proxy like this usually goes wrong
 class GroupingProxy : public QAbstractProxyModel {
     Q_OBJECT
 
 public:
     explicit GroupingProxy(DirectoryModel *model, QObject *parent = nullptr);
 
-    // A DirectoryModel source column, or -1 for no grouping. Only Name, Size,
-    // ModifiedTime and Type are meaningful; anything else groups by name.
+    // A source column, or negative for no grouping, and only name, size, date
+    // and type are meaningful, anything else grouping by name
     void setGroupColumn(int sourceColumn);
     int groupColumn() const { return m_groupColumn; }
 
@@ -49,15 +43,14 @@ public:
                         int role) const override;
     Qt::ItemFlags flags(const QModelIndex &index) const override;
 
-    // True for a heading row, which has no file behind it and must be skipped
-    // when turning a selection into files.
+    // A heading row has no file behind it and must be skipped by callers
+    // turning a selection into files
     bool isGroup(const QModelIndex &proxyIndex) const;
 
 private:
     struct Group {
         QString title;
-        // In the order the source listed them, so the sort holds within a
-        // heading.
+        // In source order, so the sort holds within a heading
         QList<int> rows;
 
         bool operator==(const Group &other) const
@@ -66,14 +59,11 @@ private:
         }
     };
 
-    // Recomputes the groups, resetting only if they came out different. Most
-    // source churn changes no grouping — a thumbnail landing re-sorts nothing —
-    // and a reset for it would throw away the user's selection.
+    // Resets only if the groups came out different, since most source churn
+    // changes no grouping and a reset would throw away the selection
     void rebuild();
 
-    // Coalesces bursts of source signals into one rebuild: rendering previews
-    // produces a change per file, so a few hundred files meant a few hundred
-    // rebuilds.
+    // Coalesces bursts of source signals, previews changing a row per file
     void scheduleRebuild();
 
     void computeGroups(QList<Group> *groups,
@@ -84,8 +74,7 @@ private:
     QTimer *m_rebuildTimer = nullptr;
     QList<Group> m_groups;
 
-    // Source row -> (group, position within it), so mapFromSource need not
-    // search every group.
+    // Source row to its group and its position within that group
     QHash<int, QPair<int, int>> m_rowLookup;
 
     int m_groupColumn = -1;

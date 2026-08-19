@@ -7,26 +7,32 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
-# DBus is here for one thing: telling KDED to load or unload its automounter
-# module when the mount dialog's auto-mount box is switched.
+# DBus tells KDED to load or unload its automounter module
 find_package(Qt6 REQUIRED COMPONENTS Widgets Concurrent Multimedia DBus)
-# KF6KIO brings KIOCore/KIOGui/KIOWidgets/KIOFileWidgets in one package. Every
-# file operation goes through these; nothing reimplements copy/move/delete.
+# Every file operation goes through KIO, nothing is reimplemented here
 find_package(KF6KIO REQUIRED)
 find_package(KF6CoreAddons REQUIRED)
-# KConfig reads and writes the desktop's own config files in their format; the
-# mount dialog's auto-mount box shares one with System Settings.
+# KConfig reads and writes the desktop's own config files in their format
 find_package(KF6Config REQUIRED)
 find_package(KF6WidgetsAddons REQUIRED)
 find_package(KF6WindowSystem REQUIRED)
-# Solid knows a places entry's block device, which is how a drive gets the
-# "(nvme0n1p1)" standing in for Windows' drive letter.
+# Solid knows a places entry's block device, which stands in for a drive letter
 find_package(KF6Solid REQUIRED)
 find_package(AeroQt REQUIRED)
 
 add_executable(explorer
     src/main.cpp
     src/ui/win7ui.qrc
+    src/aero/artwork.cpp
+    src/aero/arrows.cpp
+    src/aero/capacitybar.cpp
+    src/aero/icons.cpp
+    src/aero/listview.cpp
+    src/aero/sounds.cpp
+    src/aero/buttons.cpp
+    src/aero/strips.cpp
+    src/aero/taskdialog.cpp
+    src/aero/text.cpp
     src/ui/AboutDialog.cpp
     src/ui/AccessDialogs.cpp
     src/data/AutoMount.cpp

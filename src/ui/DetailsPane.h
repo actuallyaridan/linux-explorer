@@ -8,31 +8,27 @@
 
 class QLabel;
 
-// Windows 7's details pane, along the bottom of the window: a summary of the
-// folder when nothing is selected ("14 items"), and of the selection when
-// something is ("3 items selected", with the combined size).
+// Win7's details pane along the bottom, summarising the folder when nothing is
+// selected and the selection when something is
 class DetailsPane : public QWidget {
     Q_OBJECT
 
 public:
     explicit DetailsPane(QWidget *parent = nullptr);
 
-    // `freeSpace` is the note about the volume the folder sits on, which Windows
-    // keeps on show whenever nothing is selected. Empty for anything with no
-    // volume behind it, leaving only the count.
+    // The free space line is empty for anything with no volume behind it
     void showFolderSummary(int itemCount, const QString &freeSpace = QString());
     void showSelection(const QList<KFileItem> &items);
 
-    // A drive picked on the Computer page. A ComputerModel index rather than a
-    // KFileItem: its figures are model roles, not anything KFileItem reports.
+    // A drive model index, whose figures are model roles rather than anything
+    // a file item reports
     void showDrive(const QModelIndex &index);
 
-    // Listing errors land here rather than in a status bar, Win7's Explorer
-    // having none. Overwritten by the next selection change or load.
+    // Win7's Explorer has no status bar, so listing errors land here
     void showMessage(const QString &message);
 
 private:
-    // Measured from a Win7 window: a 32px icon with two 9pt lines beside it.
+    // A 32px icon with two 9pt lines beside it
     static constexpr int kPaneHeight = 52;
 
     void setContent(const QIcon &icon, const QString &primary,

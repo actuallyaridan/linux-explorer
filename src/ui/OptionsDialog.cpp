@@ -1,8 +1,9 @@
 #include "OptionsDialog.h"
 #include "Branding.h"
-#include "IconHelper.h"
+#include "aero/icons.h"
 #include "Settings.h"
-#include "Win7Ui.h"
+#include "aero/text.h"
+#include "aero/palette.h"
 
 #include <QCheckBox>
 #include <QGroupBox>
@@ -17,20 +18,18 @@
 
 namespace {
 
-// Win7's Folder Options is fixed-size, and this is its size: the View tab's
-// tree is the only thing that would grow, and it is meant to scroll.
+// Win7's folder options does not resize, and this is its size
 constexpr int kDialogWidth = 420;
 constexpr int kDialogHeight = 470;
 
-// The indent Win7 gives the icon-and-text row at the top of each group box.
+// The indent Win7 gives the row at the top of each group box
 constexpr int kGroupIndent = 4;
 
-// A group box with Win7's spacing; Qt's default crowds both the title and the
-// frame.
+// Qt's default spacing crowds both the title and the frame
 QGroupBox *group(const QString &title)
 {
     auto *box = new QGroupBox(title);
-    Win7::setPointSize(box, 9);
+    Aero::setPointSize(box, 9);
     auto *layout = new QVBoxLayout(box);
     layout->setContentsMargins(10, 8, 10, 10);
     layout->setSpacing(6);
@@ -40,19 +39,18 @@ QGroupBox *group(const QString &title)
 QRadioButton *radio(const QString &text)
 {
     auto *button = new QRadioButton(text);
-    Win7::setPointSize(button, 9);
+    Aero::setPointSize(button, 9);
     return button;
 }
 
 QCheckBox *check(const QString &text)
 {
     auto *box = new QCheckBox(text);
-    Win7::setPointSize(box, 9);
+    Aero::setPointSize(box, 9);
     return box;
 }
 
-// The illustrative glyph Win7 puts left of a group's first control. Decorative,
-// and skipped silently rather than leaving a gap when the theme has none.
+// Decorative, and skipped silently when the theme has no such icon
 QWidget *illustrated(const QIcon &icon, QWidget *content)
 {
     if (icon.isNull())
@@ -77,7 +75,7 @@ QWidget *illustrated(const QIcon &icon, QWidget *content)
 OptionsDialog::OptionsDialog(QWidget *parent)
     : QDialog(parent)
 {
-    // Not "Folder Options": this carries the naming switches too.
+    // Not folder options, this carrying the naming switches too
     setWindowTitle(tr("Options"));
     setModal(true);
 
@@ -86,7 +84,7 @@ OptionsDialog::OptionsDialog(QWidget *parent)
     root->setSpacing(10);
 
     m_tabs = new QTabWidget;
-    Win7::setPointSize(m_tabs, 9);
+    Aero::setPointSize(m_tabs, 9);
     m_tabs->addTab(buildGeneralTab(), tr("General"));
     m_tabs->addTab(buildViewTab(), tr("View"));
     m_tabs->addTab(buildSearchTab(), tr("Search"));
@@ -101,10 +99,10 @@ OptionsDialog::OptionsDialog(QWidget *parent)
     auto *cancel = new QPushButton(tr("Cancel"));
     m_apply = new QPushButton(tr("Apply"));
     ok->setDefault(true);
-    // Win7 starts with Apply greyed and enables it once something is touched.
+    // Win7 starts with Apply greyed and enables it once something is touched
     m_apply->setEnabled(false);
     for (QPushButton *button : {ok, cancel, m_apply}) {
-        Win7::setPointSize(button, 9);
+        Aero::setPointSize(button, 9);
         button->setMinimumWidth(80);
         buttons->addWidget(button);
     }
@@ -124,7 +122,7 @@ OptionsDialog::OptionsDialog(QWidget *parent)
 
     load();
 
-    // After load(), so filling the controls in does not count as a change.
+    // After loading, so filling the controls in does not count as a change
     const auto touched = [this] { m_apply->setEnabled(true); };
     for (QRadioButton *button : {m_sameWindow, m_ownWindow, m_singleClick,
                                  m_doubleClick, m_namesOnly, m_namesAndContents}) {
@@ -133,9 +131,8 @@ OptionsDialog::OptionsDialog(QWidget *parent)
     connect(m_includeSubfolders, &QCheckBox::toggled, this, touched);
     connect(m_advanced, &QTreeWidget::itemChanged, this, touched);
 
-    // Fixed to whichever is larger of Windows' size and what the layout needs,
-    // rather than a bare constant: a wider font or a longer translation would
-    // otherwise clip a label with no way to reveal it.
+    // The larger of Windows' size and what the layout needs, since a wider font
+    // or a longer translation would otherwise clip a label with no way to see it
     setFixedSize(qMax(kDialogWidth, sizeHint().width()),
                  qMax(kDialogHeight, sizeHint().height()));
 }
@@ -157,7 +154,7 @@ QWidget *OptionsDialog::buildGeneralTab()
     browseLayout->addWidget(m_sameWindow);
     browseLayout->addWidget(m_ownWindow);
     browse->layout()->addWidget(
-        illustrated(themeIcon({"folder-open", "folder"}), browseChoices));
+        illustrated(Aero::themeIcon({"folder-open", "folder"}), browseChoices));
     layout->addWidget(browse);
 
     QGroupBox *click = group(tr("Click items as follows"));
@@ -170,13 +167,13 @@ QWidget *OptionsDialog::buildGeneralTab()
     clickLayout->addWidget(m_singleClick);
     clickLayout->addWidget(m_doubleClick);
     click->layout()->addWidget(
-        illustrated(themeIcon({"input-mouse", "mouse"}), clickChoices));
+        illustrated(Aero::themeIcon({"input-mouse", "mouse"}), clickChoices));
     layout->addWidget(click);
 
     layout->addStretch(1);
 
     auto *restore = new QPushButton(tr("Restore Defaults"));
-    Win7::setPointSize(restore, 9);
+    Aero::setPointSize(restore, 9);
     connect(restore, &QPushButton::clicked, this, &OptionsDialog::restoreDefaults);
     auto *restoreRow = new QHBoxLayout;
     restoreRow->addStretch(1);
@@ -218,7 +215,7 @@ QWidget *OptionsDialog::buildViewTab()
         tr("You can apply the view (such as Details or Icons) that you are "
            "using for this folder to all folders of this type."));
     viewsText->setWordWrap(true);
-    Win7::setPointSize(viewsText, 9);
+    Aero::setPointSize(viewsText, 9);
 
     auto *viewsButtons = new QHBoxLayout;
     viewsButtons->setContentsMargins(0, 6, 0, 0);
@@ -226,7 +223,7 @@ QWidget *OptionsDialog::buildViewTab()
     auto *applyToFolders = new QPushButton(tr("Apply to Folders"));
     auto *resetFolders = new QPushButton(tr("Reset Folders"));
     for (QPushButton *button : {applyToFolders, resetFolders}) {
-        Win7::setPointSize(button, 9);
+        Aero::setPointSize(button, 9);
         button->setMinimumWidth(120);
         viewsButtons->addWidget(button);
     }
@@ -239,17 +236,17 @@ QWidget *OptionsDialog::buildViewTab()
     viewsLayout->addWidget(viewsText);
     viewsLayout->addLayout(viewsButtons);
     views->layout()->addWidget(
-        illustrated(themeIcon({"view-list-details", "folder"}), viewsContent));
+        illustrated(Aero::themeIcon({"view-list-details", "folder"}), viewsContent));
     layout->addWidget(views);
 
-    // Immediate rather than waiting for Apply: neither is a setting, they are
-    // operations on the stored per-folder view modes with nothing to cancel to.
+    // Immediate rather than on Apply, these being operations on the stored view
+    // modes with nothing to cancel back to
     connect(applyToFolders, &QPushButton::clicked, this,
             &OptionsDialog::applyViewToAllFolders);
     connect(resetFolders, &QPushButton::clicked, this,
             &OptionsDialog::resetAllFolders);
 
-    layout->addWidget(Win7::label(tr("Advanced settings:"), 9));
+    layout->addWidget(Aero::label(tr("Advanced settings:"), 9));
 
     m_advanced = new QTreeWidget;
     m_advanced->setColumnCount(1);
@@ -259,11 +256,11 @@ QWidget *OptionsDialog::buildViewTab()
     m_advanced->setUniformRowHeights(true);
     m_advanced->setSelectionMode(QAbstractItemView::NoSelection);
     m_advanced->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    Win7::setPointSize(m_advanced, 9);
+    Aero::setPointSize(m_advanced, 9);
 
     auto *files = new QTreeWidgetItem(m_advanced);
     files->setText(0, tr("Files and Folders"));
-    files->setIcon(0, themeIcon({"folder"}));
+    files->setIcon(0, Aero::themeIcon({"folder"}));
     files->setFlags(Qt::ItemIsEnabled);
 
     m_alwaysShowMenus = addCheck(files, tr("Always show menus"),
@@ -276,17 +273,16 @@ QWidget *OptionsDialog::buildViewTab()
 
     auto *hidden = new QTreeWidgetItem(files);
     hidden->setText(0, tr("Hidden files and folders"));
-    hidden->setIcon(0, themeIcon({"folder"}));
+    hidden->setIcon(0, Aero::themeIcon({"folder"}));
     hidden->setFlags(Qt::ItemIsEnabled);
     addRadioPair(hidden, tr("Don't show hidden files, folders, or drives"),
                  tr("Show hidden files, folders, and drives"),
                  &m_hiddenOff, &m_hiddenOn);
 
-    // This application's own, so it gets its own heading rather than being
-    // slipped in among the Windows-named settings.
+    // Ours rather than Windows', so it gets its own heading
     auto *naming = new QTreeWidgetItem(m_advanced);
     naming->setText(0, tr("Windows-friendly naming"));
-    naming->setIcon(0, themeIcon({"preferences-desktop-locale", "folder"}));
+    naming->setIcon(0, Aero::themeIcon({"preferences-desktop-locale", "folder"}));
     naming->setFlags(Qt::ItemIsEnabled);
 
     m_friendlyMode = addCheck(naming, tr("Show system folders under Windows names"),
@@ -301,7 +297,7 @@ QWidget *OptionsDialog::buildViewTab()
     layout->addWidget(m_advanced, 1);
 
     // The exclusivity the tree cannot express, and the dependency between the
-    // two naming rows, which Win7 would render as a greyed-out child.
+    // two naming rows
     connect(m_advanced, &QTreeWidget::itemChanged, this,
             [this](QTreeWidgetItem *item, int) {
         QSignalBlocker blocker(m_advanced);
@@ -310,7 +306,7 @@ QWidget *OptionsDialog::buildViewTab()
         else if (item == m_hiddenOn && item->checkState(0) == Qt::Checked)
             m_hiddenOff->setCheckState(0, Qt::Unchecked);
         else if (item == m_hiddenOff || item == m_hiddenOn) {
-            // Neither set is not a state the setting has.
+            // Neither set is not a state the setting has
             if (m_hiddenOff->checkState(0) == Qt::Unchecked
                 && m_hiddenOn->checkState(0) == Qt::Unchecked) {
                 item->setCheckState(0, Qt::Checked);
@@ -326,7 +322,7 @@ QWidget *OptionsDialog::buildViewTab()
     });
 
     auto *restore = new QPushButton(tr("Restore Defaults"));
-    Win7::setPointSize(restore, 9);
+    Aero::setPointSize(restore, 9);
     connect(restore, &QPushButton::clicked, this, &OptionsDialog::restoreDefaults);
     auto *restoreRow = new QHBoxLayout;
     restoreRow->addStretch(1);
@@ -346,15 +342,15 @@ QWidget *OptionsDialog::buildSearchTab()
     QGroupBox *what = group(tr("What to search"));
     m_namesOnly = radio(tr("Search file names only"));
     m_namesAndContents = radio(tr("Search file names and contents"));
-    // Windows offered contents cheaply because its indexer had already read
-    // every file. There is no index here, so the cost is stated where the
-    // choice is made.
+    // Windows had an indexer, and without one the cost is stated where the
+    // choice is made
     auto *cost = new QLabel(
         tr("Searching contents reads every file it walks past, so it can take "
            "several minutes over a large folder."));
     cost->setWordWrap(true);
-    Win7::setPointSize(cost, 9);
-    cost->setStyleSheet("color: #5A5A5A;");
+    Aero::setPointSize(cost, 9);
+    cost->setStyleSheet(QStringLiteral("color: %1;")
+                        .arg(QLatin1String(Aero::Palette::MutedText)));
 
     auto *whatChoices = new QWidget;
     auto *whatLayout = new QVBoxLayout(whatChoices);
@@ -364,7 +360,7 @@ QWidget *OptionsDialog::buildSearchTab()
     whatLayout->addWidget(m_namesAndContents);
     whatLayout->addWidget(cost);
     what->layout()->addWidget(
-        illustrated(themeIcon({"system-search", "edit-find"}), whatChoices));
+        illustrated(Aero::themeIcon({"system-search", "edit-find"}), whatChoices));
     layout->addWidget(what);
 
     QGroupBox *how = group(tr("How to search"));
@@ -378,7 +374,7 @@ QWidget *OptionsDialog::buildSearchTab()
     layout->addStretch(1);
 
     auto *restore = new QPushButton(tr("Restore Defaults"));
-    Win7::setPointSize(restore, 9);
+    Aero::setPointSize(restore, 9);
     connect(restore, &QPushButton::clicked, this, &OptionsDialog::restoreDefaults);
     auto *restoreRow = new QHBoxLayout;
     restoreRow->addStretch(1);
@@ -443,7 +439,7 @@ void OptionsDialog::restoreDefaults()
 {
     QSignalBlocker blocker(m_advanced);
 
-    // Per tab, as Windows does it. Nothing is written, so Cancel still undoes it.
+    // Per tab, as Windows does it, and nothing is written so Cancel still undoes
     switch (m_tabs->currentIndex()) {
     case 0:
         m_sameWindow->setChecked(true);
@@ -451,8 +447,7 @@ void OptionsDialog::restoreDefaults()
         break;
 
     case 1:
-        // Hidden files off and extensions shown: this project's defaults rather
-        // than Windows'; see the README.
+        // This project's defaults rather than Windows' own
         m_hiddenOff->setCheckState(0, Qt::Checked);
         m_hiddenOn->setCheckState(0, Qt::Unchecked);
         m_hideExtensions->setCheckState(0, Qt::Unchecked);

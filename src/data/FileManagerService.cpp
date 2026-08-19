@@ -13,18 +13,16 @@
 
 namespace {
 
-// Explorer's own name; whoever holds it is the primary instance.
+// Explorer's own name, and whoever holds it is the primary instance
 const QLatin1String kAppService("io.github.actuallyaridan.LinuxExplorer");
 
-// The shared name, and the object path the specification fixes for it. The
-// object is exported once on the connection, so both names route to it.
+// The shared name and its specified object path, the object being exported
+// once so both names route to it
 const QLatin1String kSharedService("org.freedesktop.FileManager1");
 const QLatin1String kObjectPath("/org/freedesktop/FileManager1");
 const QLatin1String kInterface("org.freedesktop.FileManager1");
 
-// The URIs a caller handed us, as real URLs. Anything unparseable is dropped
-// rather than guessed at: these come from other applications, and opening the
-// wrong folder is worse than opening nothing.
+// Anything unparseable is dropped rather than guessed at
 QList<QUrl> toUrls(const QStringList &uriList)
 {
     QList<QUrl> urls;
@@ -46,7 +44,7 @@ FileManagerService::FileManagerService(QObject *parent)
 
 QString FileManagerService::startupId()
 {
-    // Wayland's xdg-activation token first, then X11's startup notification id.
+    // The Wayland activation token first, then the X11 startup notification id
     const QByteArray wayland = qgetenv("XDG_ACTIVATION_TOKEN");
     if (!wayland.isEmpty())
         return QString::fromLocal8Bit(wayland);
@@ -57,11 +55,10 @@ bool FileManagerService::claim()
 {
     QDBusConnection bus = QDBusConnection::sessionBus();
     if (!bus.isConnected())
-        return true;   // no session bus: run standalone rather than refusing to start
+        return true;   // no session bus, so run standalone rather than refuse to start
 
     // The private name decides primacy, so it is claimed before anything is
-    // exported. No queuing: a launch waiting for the running instance to exit
-    // is a hang, not a launch.
+    // exported, and there is no queuing since a launch that waits is a hang
     QDBusConnectionInterface *iface = bus.interface();
     if (!iface)
         return true;
@@ -75,9 +72,8 @@ bool FileManagerService::claim()
 
     bus.registerObject(kObjectPath, this, QDBusConnection::ExportAllSlots);
 
-    // Replacement allowed, so a file manager the user later prefers can take it
-    // over without a restart. Failure is ordinary: something else already holds
-    // it.
+    // Replacement allowed, so another file manager can take it over without a
+    // restart, and failure here is ordinary
     const auto shared = iface->registerService(
         kSharedService, QDBusConnectionInterface::DontQueueService,
         QDBusConnectionInterface::AllowReplacement);
@@ -98,8 +94,8 @@ bool FileManagerService::forward(const QStringList &uris, bool reveal)
         reveal ? QStringLiteral("ShowItems") : QStringLiteral("ShowFolders"));
     call.setArguments({uris, startupId()});
 
-    // Blocking deliberately: this process is about to exit, and returning early
-    // would race the window against our own teardown.
+    // Blocking, since this process is about to exit and returning early would
+    // race the window against our own teardown
     const QDBusMessage reply = bus.call(call);
     return reply.type() != QDBusMessage::ErrorMessage;
 }
@@ -119,9 +115,8 @@ void FileManagerService::ShowFolders(const QStringList &uriList,
 void FileManagerService::ShowItems(const QStringList &uriList,
                                    const QString &startupId)
 {
-    // Files, not folders: each is revealed in its parent with itself selected.
-    // Several files in one folder become one window with a multiple selection,
-    // which is what a caller passing a whole download batch means.
+    // Each file is revealed in its parent and selected, and several in one
+    // folder become one window with a multiple selection
     QMap<QUrl, QList<QUrl>> byParent;
     const QList<QUrl> urls = toUrls(uriList);
     for (const QUrl &url : urls)
@@ -142,7 +137,6 @@ void FileManagerService::ShowItemProperties(const QStringList &uriList,
     KFileItemList items;
     for (const QUrl &url : urls)
         items.append(KFileItem(url));
-    // No parent: the caller asked for a properties dialog, not an Explorer
-    // window to host it, and this process may have none open.
+    // No parent, this process possibly having no window open
     FileOps::showProperties(items, nullptr);
 }
