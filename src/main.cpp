@@ -118,7 +118,7 @@ int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
     app.setOrganizationName("explorer");
     app.setApplicationName("explorer");
-    app.setApplicationVersion(QStringLiteral("1.0"));
+    app.setApplicationVersion(QStringLiteral("1.1"));
 
     // A decoration theme's exception list matches on the window class, which on
     // Wayland is the app id and is read from this as each window is created.
@@ -153,10 +153,14 @@ int main(int argc, char *argv[]) {
     // Normalised before anything else sees them, the handoff and the bus
     // interface both speaking locations, and this process's working directory
     // being the only place a relative path can correctly resolve
+    //
+    // FullyEncoded, since the receiving end re-parses these in StrictMode: a
+    // plain toString() leaves spaces and other reserved characters literal,
+    // which StrictMode then rejects, silently dropping the location
     QStringList uris;
     uris.reserve(urls.size());
     for (const QUrl &url : urls)
-        uris.append(url.toString());
+        uris.append(url.toString(QUrl::FullyEncoded));
 
     // One Explorer per session, so a second launch hands its arguments to the
     // one holding the bus name and gets out of the way
