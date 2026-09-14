@@ -54,6 +54,7 @@ BoolSetting s_browseInNewWindow{"BrowseInNewWindow", false};
 BoolSetting s_singleClickToOpen{"SingleClickToOpen", false};
 BoolSetting s_searchFileContents{"SearchFileContents", false};
 BoolSetting s_searchSubfolders{"SearchSubfolders", true};
+BoolSetting s_notifyUnmountedDrives{"NotifyUnmountedDrives", true};
 
 // QSettings treats a slash as a group separator, so paths are percent encoded
 QString folderKey(const QUrl &url)
@@ -138,6 +139,9 @@ void setSearchFileContents(bool contents) { s_searchFileContents.set(contents); 
 
 bool searchSubfolders()         { return s_searchSubfolders.get(); }
 void setSearchSubfolders(bool recursive) { s_searchSubfolders.set(recursive); }
+
+bool notifyUnmountedDrives()    { return s_notifyUnmountedDrives.get(); }
+void setNotifyUnmountedDrives(bool notify) { s_notifyUnmountedDrives.set(notify); }
 
 void clearRememberedViewModes()
 {

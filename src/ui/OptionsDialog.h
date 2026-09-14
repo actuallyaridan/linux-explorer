@@ -64,6 +64,7 @@ private:
     QTreeWidgetItem *m_hideExtensions = nullptr;
     QTreeWidgetItem *m_checkBoxes = nullptr;
     QTreeWidgetItem *m_alwaysShowMenus = nullptr;
+    QTreeWidgetItem *m_notifyUnmounted = nullptr;
     QTreeWidgetItem *m_friendlyMode = nullptr;
     QTreeWidgetItem *m_windowsNames = nullptr;
 

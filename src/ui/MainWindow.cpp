@@ -39,7 +39,6 @@
 
 #include <AeroQt/insetwindow.h>
 #include <AeroQt/navbuttons.h>
-#include <AeroQt/notifystrip.h>
 
 #include <QAction>
 #include <QActionGroup>
@@ -1641,6 +1640,7 @@ MainWindow::Notice MainWindow::pendingNotice() const
         return Notice::Administrator;
 
     if (isComputerView() && !m_notificationDismissed
+        && Settings::notifyUnmountedDrives()
         && m_computerModel->unmountedCount() > 0) {
         return Notice::UnmountedDrives;
     }
@@ -2122,6 +2122,7 @@ void MainWindow::applyOptions()
 
     refreshBranding();
     updateActionStates();
+    updateNotification();
 }
 
 void MainWindow::showMapDriveDialog()

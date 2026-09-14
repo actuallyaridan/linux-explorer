@@ -80,6 +80,11 @@ void setSearchFileContents(bool contents);
 bool searchSubfolders();
 void setSearchSubfolders(bool recursive);
 
+// Folder Options, View, warn about drives that are connected but not mounted,
+// on by default so the notice is not missed the first time it matters
+bool notifyUnmountedDrives();
+void setNotifyUnmountedDrives(bool notify);
+
 // Folder Options, reset folders
 void clearRememberedViewModes();
 

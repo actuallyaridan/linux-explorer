@@ -27,7 +27,7 @@ jobs:
             pacman -Syu --noconfirm --needed \
               git cmake ninja extra-cmake-modules qt6-base qt6-multimedia \
               qt6-tools kio kcoreaddons kconfig kwidgetsaddons kwindowsystem \
-              kcompletion solid
+              kcompletion solid frameworkintegration
 
             git clone https://gitgud.io/atmk/libaero-qt.git /tmp/libaero-qt
             cd /tmp/libaero-qt

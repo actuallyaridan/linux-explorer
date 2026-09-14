@@ -270,6 +270,11 @@ QWidget *OptionsDialog::buildViewTab()
     m_checkBoxes = addCheck(files, tr("Use check boxes to select items"),
         tr("Puts a tick box on each item so several can be picked without "
            "holding Ctrl."));
+    m_notifyUnmounted = addCheck(files,
+        tr("Suggest to mount unmounted drives"),
+        tr("Shows a banner in Computer when a connected drive is not mounted. "
+           "Turning this off hides the banner without changing which drives "
+           "appear in Computer."));
 
     auto *hidden = new QTreeWidgetItem(files);
     hidden->setText(0, tr("Hidden files and folders"));
@@ -403,6 +408,7 @@ void OptionsDialog::load()
     m_hideExtensions->setCheckState(0, state(Settings::hideKnownExtensions()));
     m_checkBoxes->setCheckState(0, state(Settings::useCheckBoxes()));
     m_alwaysShowMenus->setCheckState(0, state(Settings::alwaysShowMenus()));
+    m_notifyUnmounted->setCheckState(0, state(Settings::notifyUnmountedDrives()));
 
     const bool friendly = Branding::windowsFriendlyMode();
     m_friendlyMode->setCheckState(0, state(friendly));
@@ -427,6 +433,7 @@ void OptionsDialog::save()
     Settings::setHideKnownExtensions(checked(m_hideExtensions));
     Settings::setUseCheckBoxes(checked(m_checkBoxes));
     Settings::setAlwaysShowMenus(checked(m_alwaysShowMenus));
+    Settings::setNotifyUnmountedDrives(checked(m_notifyUnmounted));
 
     Branding::setWindowsFriendlyMode(checked(m_friendlyMode));
     Branding::setUseWindowsNames(checked(m_windowsNames));
@@ -453,6 +460,7 @@ void OptionsDialog::restoreDefaults()
         m_hideExtensions->setCheckState(0, Qt::Unchecked);
         m_checkBoxes->setCheckState(0, Qt::Unchecked);
         m_alwaysShowMenus->setCheckState(0, Qt::Unchecked);
+        m_notifyUnmounted->setCheckState(0, Qt::Checked);
         m_friendlyMode->setCheckState(0, Qt::Unchecked);
         m_windowsNames->setCheckState(0, Qt::Unchecked);
         m_windowsNames->setDisabled(true);

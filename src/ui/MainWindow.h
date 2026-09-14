@@ -32,7 +32,6 @@ class QStackedWidget;
 class QTimer;
 class QHBoxLayout;
 class QLabel;
-namespace Aero { class NotifyStrip; }
 class QLineEdit;
 class QProgressBar;
 class QPropertyAnimation;
