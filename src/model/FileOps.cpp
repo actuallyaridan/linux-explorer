@@ -30,7 +30,6 @@
 #include <QProcess>
 #include <QStandardPaths>
 #include <QStringList>
-
 #include <functional>
 
 namespace {
@@ -233,61 +232,115 @@ void emptyTrash(QWidget *window)
 
 namespace {
 
-KIO::CopyJob *startRename(const QUrl &url, const QString &newName, QWidget *window)
+class RenameInstance
 {
-    if (newName.isEmpty() || newName == url.fileName())
-        return nullptr;
+private:
+    QWidget *m_window;
+    QObject *m_context = nullptr;
+    QUrl m_firstPath;
+    bool m_pathSet = false;
 
-    QUrl target = url.adjusted(QUrl::RemoveFilename);
-    target.setPath(target.path() + newName);
+public:
+    explicit RenameInstance(QWidget *window, const QUrl& fallbackPath) : m_firstPath(fallbackPath)
+    {
+        m_window = window;
+    }
 
-    KIO::CopyJob *job = KIO::moveAs(url, target);
-    job->setUiDelegate(delegateFor(window));
-    reportFailures(job, window, translate("Error Renaming File or Folder"),
-                   translate("Cannot rename %1.").arg(nameOf(url)));
-    KIO::FileUndoManager::self()->recordCopyJob(job);
-    return job;
-}
+    inline QObject*
+    context() const
+    {
+        return m_context;
+    }
+
+    KIO::CopyJob* startRename(const QUrl &url, const QString &newName)
+    {
+        if (newName.isEmpty() || newName == url.fileName())
+            return nullptr;
+
+        QUrl target = url.adjusted(QUrl::RemoveFilename);
+        target.setPath(target.path() + newName);
+
+        KIO::CopyJob *job = KIO::moveAs(url, target);
+
+        m_context = (m_window) ? static_cast<QObject*>(m_window) : static_cast<QObject*>(job);
+
+        QObject::connect(job, &KIO::CopyJob::copyingDone, context(),
+            [this](KIO::Job* finished, const QUrl&, const QUrl& newPath, const QDateTime &, bool, bool)
+            {
+                if (finished->error() != KIO::ERR_USER_CANCELED && (!m_pathSet)) {
+                    m_firstPath = newPath;
+                    m_pathSet = true;
+                }
+            });
+
+        job->setUiDelegate(delegateFor(m_window));
+        reportFailures(job, m_window, translate("Error Renaming File or Folder"),
+                       translate("Cannot rename %1.").arg(nameOf(url)));
+        KIO::FileUndoManager::self()->recordCopyJob(job);
+        return job;
+    }
+
+    QUrl
+    firstPath() const
+    {
+        return m_firstPath;
+    }
+};
 
 // One at a time, since firing them together races several jobs at overlapping
 // target names and stacks their overwrite prompts on top of each other
-void renameChain(QList<QPair<QUrl, QString>> steps, QWidget *window)
+bool renameChain(RenameInstance* instance, QList<QPair<QUrl, QString>> steps)
 {
-    while (!steps.isEmpty()) {
-        const QPair<QUrl, QString> step = steps.takeFirst();
-        KIO::CopyJob *job = startRename(step.first, step.second, window);
-        if (!job)
-            continue;
+    if (steps.isEmpty())
+        return false;
 
-        QObject *context = window ? static_cast<QObject *>(window)
-                                  : static_cast<QObject *>(job);
-        QObject::connect(job, &KJob::result, context,
-                         [steps, window](KJob *finished) {
-            if (finished->error() == KIO::ERR_USER_CANCELED)
-                return;
-            renameChain(steps, window);
-        });
-        return;
-    }
+    const QPair<QUrl, QString> step = steps.takeFirst();
+    KIO::CopyJob *job = instance->startRename(step.first, step.second);
+
+    if (job == nullptr)
+        return renameChain(instance, steps);
+
+    auto context = instance->context();
+
+    QObject::connect(job, &KJob::result, context,
+                     [instance, steps](KJob *finished) {
+                        if (finished->error() != KIO::ERR_USER_CANCELED) {
+                            if (renameChain(instance, steps))
+                                return;
+                        }
+                        Q_EMIT GLOBAL_RENAME_CONTEXT.finishRename(instance->firstPath());
+                        delete instance;
+                     });
+
+    return true;
 }
-
 } // namespace
 
-void rename(const QUrl &url, const QString &newName, QWidget *window)
+bool rename(const QUrl &url, const QString &newName, QWidget *window)
 {
-    startRename(url, newName, window);
+    RenameInstance instance(window, url);
+    auto job = instance.startRename(url, newName);
+    if (job == nullptr)
+        return false;
+    QObject::connect(job, &KJob::result, instance.context(),
+                     [instance](KJob *finished) {
+                         Q_EMIT GLOBAL_RENAME_CONTEXT.finishRename(instance.firstPath());
+                    });
+    return true;
 }
 
-void renameBatch(const QList<KFileItem> &items, const QString &baseName,
+bool renameBatch(const QList<KFileItem> &items, const QString &baseName,
                  QWidget *window)
 {
-    if (items.isEmpty() || baseName.isEmpty())
-        return;
+    Q_ASSERT((!items.isEmpty()));
 
-    if (items.size() == 1) {
-        rename(items.first().url(), baseName, window);
-        return;
-    }
+    if (baseName.isEmpty())
+        return false;
+
+    QUrl firstUrl = items.first().url();
+
+    if (items.size() == 1)
+        return rename(firstUrl, baseName, window);
 
     // The editor is prefilled with one file's real name, so an unchanged
     // commit still carries its extension and every file would end up with two
@@ -313,7 +366,14 @@ void renameBatch(const QList<KFileItem> &items, const QString &baseName,
                                       .arg(counter++)
                                       .arg(suffix)});
     }
-    renameChain(steps, window);
+
+    auto instance = new RenameInstance(window, firstUrl);
+    if (renameChain(instance, steps))
+        return true;
+    else {
+        delete instance;
+        return false;
+    }
 }
 
 void extractArchive(const QUrl &archiveUrl, const QUrl &destination,

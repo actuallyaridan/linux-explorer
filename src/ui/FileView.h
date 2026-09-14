@@ -115,6 +115,8 @@ private:
     void buildDetailsView();
     void buildIconView();
 
+    void onRenameDelegate(const QModelIndex &index, const QString &name);
+
     // Shared, so the two views cannot answer different gestures
     void bindActivation(QAbstractItemView *view);
     void applyMode();
@@ -148,6 +150,13 @@ private:
     Settings::ViewMode m_mode = Settings::ViewMode::Details;
     bool m_checkBoxes = false;
     bool m_singleClick = false;
+
+    enum class RenameState : quint8 {
+        NORMAL = 0,
+        LOCKED = 1,
+        RENAMING = 2
+    };
+    RenameState m_renameState = RenameState::NORMAL;
     QUrl m_destination;
 
     // So switching a column on later does not reset every other width

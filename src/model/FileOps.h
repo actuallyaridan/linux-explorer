@@ -26,11 +26,26 @@ void deletePermanently(const QList<QUrl> &urls, QWidget *window);
 
 void emptyTrash(QWidget *window);
 
-void rename(const QUrl &url, const QString &newName, QWidget *window);
+// FIXME
+// It feels wrong to use this global variable in general, but at the same time,
+// we don't have to worry about dangling contexts.
+class GlobalRenameContext : public QObject {
+    Q_OBJECT
+
+public:
+    explicit GlobalRenameContext() { }
+
+Q_SIGNALS:
+    void finishRename(const QUrl& url);
+};
+
+static GlobalRenameContext GLOBAL_RENAME_CONTEXT;
+
+bool rename(const QUrl &url, const QString &newName, QWidget *window);
 
 // Win7's multiple rename, one base name and a counter, run as a job per file
 // so a collision fails without taking the batch down
-void renameBatch(const QList<KFileItem> &items, const QString &baseName,
+bool renameBatch(const QList<KFileItem> &items, const QString &baseName,
                  QWidget *window);
 void createFolder(const QUrl &parentDir, const QString &name, QWidget *window);
 
