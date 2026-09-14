@@ -156,11 +156,13 @@ public:
             : 0;
 
         const QString name = index.data(Qt::DisplayRole).toString();
-        // Unmounted or unreadable, so listed but with no figure to draw from
+        // Unmounted or unreadable, so listed but with no figure to draw from;
+        // the partition's filesystem stands in for the missing numbers
+        const QString fsType = index.data(ComputerModel::FileSystemTypeRole).toString();
         const QString figures = known
             ? QObject::tr("%1 free of %2").arg(KIO::convertSize(available),
                                                KIO::convertSize(total))
-            : QObject::tr("Size unavailable");
+            : fsType;
 
         const QFontMetrics fm(opt.font);
         const int lineHeight = fm.height();

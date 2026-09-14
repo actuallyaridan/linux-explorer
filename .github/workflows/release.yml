@@ -1,0 +1,112 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build release binary (x86_64)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      # libAeroQt has no Ubuntu package, and Arch is this project's own
+      # target, so the release binary is built the same way the AUR package
+      # is: inside Arch, against the same libaero-qt the AUR depends on
+      - name: Build inside Arch
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo archlinux:base-devel bash -c '
+            set -e
+            pacman -Syu --noconfirm --needed \
+              git cmake ninja extra-cmake-modules qt6-base qt6-multimedia \
+              qt6-tools kio kcoreaddons kconfig kwidgetsaddons kwindowsystem \
+              kcompletion solid
+
+            git clone https://gitgud.io/atmk/libaero-qt.git /tmp/libaero-qt
+            cd /tmp/libaero-qt
+            git submodule init deps/slidingstackedwidget
+            git config submodule.deps/slidingstackedwidget.url \
+              https://github.com/Qt-Widgets/SlidingStackedWidget-1.git
+            git -c protocol.file.allow=always submodule update deps/slidingstackedwidget
+            cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+            cmake --build build
+            cmake --install build
+            cd /repo
+
+            cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release
+            cmake --build build
+          '
+
+      - name: Rename binary
+        run: cp build/explorer explorer-x86_64
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.release.tag_name }}
+          files: explorer-x86_64
+
+  aur:
+    name: Publish to AUR
+    needs: build
+    runs-on: ubuntu-latest
+
+    env:
+      TAG: ${{ github.event.release.tag_name }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Render PKGBUILD for this release
+        run: |
+          VER="${TAG#v}"
+          URL="${{ github.server_url }}/${{ github.repository }}/archive/refs/tags/${TAG}.tar.gz"
+          SUM="$(curl -fsSL "$URL" | sha256sum | cut -d' ' -f1)"
+          mkdir -p out
+          sed -e "s|^pkgver=.*|pkgver=${VER}|" \
+              -e "s|^sha256sums=.*|sha256sums=('${SUM}')|" \
+              aur/PKGBUILD > out/PKGBUILD
+          # Fail loudly rather than publishing a placeholder to the AUR
+          grep -q "^pkgver=${VER}$" out/PKGBUILD
+          grep -q "^sha256sums=('${SUM}')$" out/PKGBUILD
+          cat out/PKGBUILD
+
+      - name: Generate .SRCINFO
+        run: |
+          docker run --rm -v "$PWD/out:/pkg" -w /pkg archlinux:base-devel bash -c '
+            useradd -m builder
+            chown -R builder /pkg
+            su builder -c "makepkg --printsrcinfo" > .SRCINFO
+          '
+          cat out/.SRCINFO
+
+      - name: Push to AUR
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.AUR_SSH_KEY }}" > ~/.ssh/aur_id_ed25519
+          chmod 600 ~/.ssh/aur_id_ed25519
+          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
+          cat >> ~/.ssh/config << 'EOF'
+          Host aur.archlinux.org
+            IdentityFile ~/.ssh/aur_id_ed25519
+            User aur
+          EOF
+          git clone ssh://aur@aur.archlinux.org/linux-explorer.git aur-repo
+          cd aur-repo
+          cp ../out/PKGBUILD ../out/.SRCINFO .
+          git config user.name "actuallyaridan"
+          git config user.email "adnan@aridan.net"
+          # Works whether the AUR package already exists or is brand new
+          git symbolic-ref HEAD refs/heads/master
+          git add PKGBUILD .SRCINFO
+          git diff --cached --quiet || git commit -m "Update to ${TAG}"
+          git push origin HEAD:master

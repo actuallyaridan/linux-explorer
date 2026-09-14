@@ -36,7 +36,7 @@ static QString withoutScrollBarRules(QString qss)
     while (pos < qss.size()) {
         const int open = qss.indexOf(QLatin1Char('{'), pos);
         const int close = open < 0 ? -1 : qss.indexOf(QLatin1Char('}'), open);
-        if (close < 0) {                       // trailing text outside any block
+        if (close < 0) {
             out += QStringView(qss).mid(pos);
             break;
         }
@@ -168,7 +168,7 @@ int main(int argc, char *argv[]) {
     }
 
     Aero::registerStylesheet(&app);
-    new ScrollBarUnstyler(&app);   // native scroll bars, owned by the app
+    new ScrollBarUnstyler(&app);
 
     // The chrome has no opinion on what its icons degrade to
     Aero::setIconFallbacks({QStringLiteral("system-file-manager"),

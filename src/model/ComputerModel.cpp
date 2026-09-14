@@ -52,6 +52,7 @@ void ComputerModel::rebuild()
         device.placeRow = row;
         device.removable = (group == KFilePlacesModel::RemovableDevicesType);
         device.type = device.removable ? tr("Removable Disk") : tr("Local Disk");
+        device.fsType = DriveLabel::fileSystemType(m_places, index);
 
         // Any data change rebuilds the whole list, so starting each size from
         // scratch would drop the page back to an unknown figure every time
@@ -235,6 +236,8 @@ QVariant ComputerModel::data(const QModelIndex &index, int role) const
         return device.sizeKnown;
     case RemovableRole:
         return device.removable;
+    case FileSystemTypeRole:
+        return device.fsType;
     default:
         break;
     }

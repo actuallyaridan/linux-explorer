@@ -13,6 +13,23 @@
 > [!WARNING]
 > **Very much a work in progress.** <br>Most things are done, but there are still things that need work. Not really daily-driveable yet.
 
+## Installation
+
+### Arch / CachyOS (AUR)
+
+```bash
+yay -S linux-explorer
+```
+
+### Pre-built binaries
+
+Download the latest binary from the [Releases](https://github.com/actuallyaridan/linux-explorer/releases/latest) page and place it somewhere in your `$PATH`. It still needs Qt6, KF6 and libAeroQt installed, same as building from source, but skips the compile:
+
+```bash
+chmod +x explorer-x86_64
+sudo mv explorer-x86_64 /usr/local/bin/explorer
+```
+
 ## Building
 
 Built for CachyOS / Arch. Other distros should work given Qt6, KF6 and libAeroQt.
@@ -49,25 +66,9 @@ xdg-mime default linux-explorer.desktop inode/directory
 
 ## Why not a fork of Dolphin?
 
-Because the part of a file manager that is genuinely hard to get right, and dangerous to get wrong, isn't Dolphin. It's KIO, a KDE Framework any application can link: overwrite and conflict resolution, permissions, cross-device copies, restorable trash, cancellable progress and undo all live there. Dolphin calls into it; so does this. `src/model/FileOps.cpp` is a thin facade over KIO jobs, and nothing in this repository reads or writes file contents itself.
+The hard part of a file manager is KIO: overwrite and conflict resolution, permissions, cross-device copies, restorable trash, cancellable progress and undo. Dolphin links against it directly, and so does this project. `src/model/FileOps.cpp` is a thin facade over KIO jobs, and nothing in this repository reads or writes file contents itself.
 
-What's left to write is the Windows 7 chrome, which is the part worth writing by hand, and which a fork would have made permanently painful to keep in sync with upstream.
-
-## Features
-
-- Windows 7 chrome: navigation bar, breadcrumb address bar with per-segment dropdowns, command bar, details pane, and the classic menu bar on Alt
-- All eight view modes on Ctrl+Shift+1..8, remembered per folder, with thumbnails and a preview pane
-- Details view with a column chooser, sorting, and Win7's "Group by"
-- Navigation pane backed by the desktop's shared bookmarks, plus full back / forward / up history
-- Drag and drop, including to and from other applications, and spring-loaded folders
-- Cut, copy, paste, rename, trash, delete, shortcuts, Send To and undo, all through KIO
-- Rename a whole selection at once, the way Win7's F2 does
-- Filter as you type; press Enter to search subfolders, then widen to file contents or the whole computer
-- `.zip`, `.tar.*`, `.7z` and `.ar` open as folders, with Extract All
-- Map network drive for SMB, SFTP, FTP, WebDAV and NFS, in UNC (`\\server\share`) or URL form
-- Open as Administrator on folders you can't write to
-- An Options dialog laid out like Win7's Folder Options (General / View / Search)
-- One instance per session, with window size, pane widths and view settings remembered between runs
+What's left is the Windows 7 look and feel, which is the part worth building from scratch rather than skinning on top of Dolphin's own UI.
 
 ### Keyboard
 

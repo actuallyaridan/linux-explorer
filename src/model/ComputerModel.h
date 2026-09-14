@@ -28,6 +28,7 @@ public:
         AvailableSizeRole,
         SizeKnownRole,
         RemovableRole,
+        FileSystemTypeRole,
     };
 
     // Type is here for the details header, Win7's menu offering only the rest
@@ -63,6 +64,7 @@ private:
     struct Device {
         QString name;
         QString type;
+        QString fsType;
         QUrl url;
         QIcon icon;
         KIO::filesize_t total = 0;
@@ -76,7 +78,8 @@ private:
         // differing on every fresh instance of the same themed icon
         bool operator==(const Device &other) const
         {
-            return name == other.name && type == other.type && url == other.url
+            return name == other.name && type == other.type && fsType == other.fsType
+                && url == other.url
                 && total == other.total && available == other.available
                 && sizeKnown == other.sizeKnown && removable == other.removable
                 && placeRow == other.placeRow;

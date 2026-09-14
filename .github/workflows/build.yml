@@ -1,0 +1,27 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  pkgbuild:
+    name: Check PKGBUILD
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The PKGBUILD is only exercised at release time otherwise, so a typo
+      # would sit undetected until it broke a publish.
+      - name: Parse PKGBUILD
+        run: |
+          docker run --rm -v "$PWD/aur:/pkg" -w /pkg archlinux:base-devel bash -c '
+            useradd -m builder
+            chown -R builder /pkg
+            su builder -c "makepkg --printsrcinfo"
+          '

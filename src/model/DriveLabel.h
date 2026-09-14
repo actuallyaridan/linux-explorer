@@ -17,4 +17,8 @@ QString forPlace(const KFilePlacesModel *places, const QModelIndex &index);
 
 QString deviceNode(const KFilePlacesModel *places, const QModelIndex &index);
 
+// The partition's filesystem, e.g. "NTFS" or "exFAT", or "RAW" when the
+// volume carries none the kernel recognises
+QString fileSystemType(const KFilePlacesModel *places, const QModelIndex &index);
+
 } // namespace DriveLabel

@@ -4,10 +4,44 @@
 
 #include <Solid/Block>
 #include <Solid/Device>
+#include <Solid/StorageVolume>
 
+#include <QHash>
 #include <QModelIndex>
+#include <QObject>
 
 namespace DriveLabel {
+
+// Solid reports the kernel's lowercase name, so the common ones are mapped to
+// how they are usually written
+static QString formatFsType(const QString &fsType)
+{
+    static const QHash<QString, QString> known = {
+        {QStringLiteral("ntfs"), QStringLiteral("NTFS")},
+        {QStringLiteral("vfat"), QStringLiteral("FAT32")},
+        {QStringLiteral("msdos"), QStringLiteral("FAT16")},
+        {QStringLiteral("exfat"), QStringLiteral("exFAT")},
+        {QStringLiteral("ext2"), QStringLiteral("ext2")},
+        {QStringLiteral("ext3"), QStringLiteral("ext3")},
+        {QStringLiteral("ext4"), QStringLiteral("ext4")},
+        {QStringLiteral("btrfs"), QStringLiteral("Btrfs")},
+        {QStringLiteral("xfs"), QStringLiteral("XFS")},
+        {QStringLiteral("f2fs"), QStringLiteral("F2FS")},
+        {QStringLiteral("iso9660"), QStringLiteral("CDFS")},
+        {QStringLiteral("udf"), QStringLiteral("UDF")},
+        {QStringLiteral("swap"), QStringLiteral("Swap")},
+        {QStringLiteral("linux_raid_member"), QStringLiteral("RAID")},
+        {QStringLiteral("crypto_luks"), QStringLiteral("LUKS")},
+    };
+
+    const auto it = known.constFind(fsType.toLower());
+    if (it != known.constEnd())
+        return it.value();
+
+    // An empty or otherwise unrecognised type is what Explorer calls RAW: a
+    // partition with no filesystem the OS can make sense of
+    return fsType.isEmpty() ? QObject::tr("RAW") : fsType.toUpper();
+}
 
 QString deviceNode(const KFilePlacesModel *places, const QModelIndex &index)
 {
@@ -42,6 +76,24 @@ QString forPlace(const KFilePlacesModel *places, const QModelIndex &index)
     }
 
     return QStringLiteral("%1 (%2)").arg(label, node);
+}
+
+QString fileSystemType(const KFilePlacesModel *places, const QModelIndex &index)
+{
+    if (!places || !index.isValid())
+        return {};
+
+    const Solid::Device device = places->deviceForIndex(index);
+    const Solid::StorageVolume *volume = device.as<Solid::StorageVolume>();
+    if (!volume)
+        return QObject::tr("RAW");
+
+    // Unused/unformatted media has no fsType either, and reads the same as
+    // one the kernel failed to recognise
+    if (volume->usage() == Solid::StorageVolume::Unused)
+        return QObject::tr("RAW");
+
+    return formatFsType(volume->fsType());
 }
 
 } // namespace DriveLabel
