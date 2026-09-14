@@ -14,7 +14,7 @@ constexpr int kDialogWidth = 340;
 constexpr int kIconSize = 64;
 
 // The version this box reports, which is not the one the command line prints
-const char *const kVersion = "Version: 0.1";
+const char *const kVersion = "Version: 1.0";
 
 } // namespace
 
@@ -32,7 +32,7 @@ AboutDialog::AboutDialog(QWidget *parent)
 
     auto *nameLabel = new QLabel(QStringLiteral("File Explorer"));
     auto *companyLabel = new QLabel(QStringLiteral("@actuallyaridan"));
-    auto *versionLabel = new QLabel(QLatin1String("Version: 0.1"));
+    auto *versionLabel = new QLabel(QLatin1String("Version: 1.0"));
 
     auto *infoLayout = new QVBoxLayout;
     infoLayout->addWidget(nameLabel);
