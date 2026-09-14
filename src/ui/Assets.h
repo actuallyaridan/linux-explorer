@@ -19,8 +19,6 @@ inline constexpr auto CommandBar = ":/win7/commandbar.png";
 inline constexpr auto CommandHover = ":/win7/commandhover.png";
 inline constexpr auto CommandPress = ":/win7/commandpress.png";
 
-inline constexpr auto DetailsBar = ":/win7/detailsbar.png";
-
 inline Aero::CapacityBarArt capacityBar()
 {
     return { QStringLiteral(":/win7/driveprogressbackground.png"),

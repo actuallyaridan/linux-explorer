@@ -6,6 +6,8 @@
 
 #include <KFileItem>
 
+#include <AeroQt/infostrip.h>
+
 class QLabel;
 
 // Win7's details pane along the bottom, summarising the folder when nothing is
@@ -34,7 +36,7 @@ private:
     void setContent(const QIcon &icon, const QString &primary,
                     const QString &secondary);
 
-    QLabel *m_icon = nullptr;
+    Aero::InfoStrip *m_strip;
     QLabel *m_primary = nullptr;
     QLabel *m_secondary = nullptr;
 };

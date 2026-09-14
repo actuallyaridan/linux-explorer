@@ -18,14 +18,9 @@ DetailsPane::DetailsPane(QWidget *parent)
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
 
-    Aero::Strip *panel = Aero::statusPanel(Explorer::Art::DetailsBar, kPaneHeight);
-    QHBoxLayout *bar = panel->row();
-
-    m_icon = new QLabel;
-    m_icon->setStyleSheet("background: transparent;");
-    m_icon->setFixedSize(32, 32);
-    m_icon->setAlignment(Qt::AlignCenter);
-    bar->addWidget(m_icon, 0, Qt::AlignVCenter);
+    m_strip = new Aero::InfoStrip();
+    m_strip->setMinimumSize(0, kPaneHeight);
+    QHBoxLayout *bar = m_strip->childLayout();
 
     auto *text = new QVBoxLayout;
     text->setContentsMargins(0, 0, 0, 0);
@@ -36,13 +31,13 @@ DetailsPane::DetailsPane(QWidget *parent)
     text->addWidget(m_secondary);
     bar->addLayout(text, 1);
 
-    root->addWidget(panel);
+    root->addWidget(m_strip);
 }
 
 void DetailsPane::setContent(const QIcon &icon, const QString &primary,
                              const QString &secondary)
 {
-    m_icon->setPixmap(icon.pixmap(32, 32));
+    m_strip->setIcon(icon);
     m_primary->setText(primary);
     m_secondary->setText(secondary);
 }
