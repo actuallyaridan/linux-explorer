@@ -90,6 +90,20 @@ QList<QUrl> scanSubdirectories(const QUrl &url)
     return children;
 }
 
+// A child whose only job is to make its parent show an expander triangle
+void addPlaceholder(QTreeWidgetItem *parent)
+{
+    auto *placeholder = new QTreeWidgetItem(parent);
+    placeholder->setData(0, kPlaceholderRole, true);
+}
+
+// True until the item's real subfolders have been read in
+bool hasOnlyPlaceholder(QTreeWidgetItem *item)
+{
+    return item->childCount() == 1
+        && item->child(0)->data(0, kPlaceholderRole).toBool();
+}
+
 // A row under a collapsed parent is still in the tree, and highlighting it
 // would put the selection somewhere the user cannot see
 bool isItemVisible(QTreeWidgetItem *item)
@@ -201,8 +215,7 @@ NavigationPane::NavigationPane(QWidget *parent)
         // placeholder, so the marker goes back first
         while (item->childCount() > 0)
             delete item->takeChild(0);
-        auto *placeholder = new QTreeWidgetItem(item);
-        placeholder->setData(0, kPlaceholderRole, true);
+        addPlaceholder(item);
         populateChildren(item);
     });
 
@@ -249,7 +262,9 @@ QStringList NavigationPane::placesSignature() const
 
 QUrl NavigationPane::urlForItem(QTreeWidgetItem *item) const
 {
-    return item ? item->data(0, Qt::UserRole).toUrl() : QUrl();
+    if (!item)
+        return {};
+    return item->data(0, Qt::UserRole).toUrl();
 }
 
 QTreeWidgetItem *NavigationPane::itemForUrl(const QUrl &url) const
@@ -309,14 +324,13 @@ void NavigationPane::addPlaceholderIfExpandable(QTreeWidgetItem *item, const QUr
     if (!info.isDir() || !info.isReadable())
         return;
 
-    auto *placeholder = new QTreeWidgetItem(item);
-    placeholder->setData(0, kPlaceholderRole, true);
+    addPlaceholder(item);
 }
 
 void NavigationPane::populateChildren(QTreeWidgetItem *item)
 {
     // Nothing to do unless the only child is the stand in
-    if (item->childCount() != 1 || !item->child(0)->data(0, kPlaceholderRole).toBool())
+    if (!hasOnlyPlaceholder(item))
         return;
 
     const QUrl url = urlForItem(item);
@@ -345,7 +359,7 @@ void NavigationPane::applyChildren(const QUrl &url, const QList<QUrl> &children)
         return;   // the tree was rebuilt while the scan was running
 
     // Anything but the lone placeholder means the item was repopulated since
-    if (item->childCount() != 1 || !item->child(0)->data(0, kPlaceholderRole).toBool())
+    if (!hasOnlyPlaceholder(item))
         return;
 
     delete item->takeChild(0);
@@ -388,12 +402,15 @@ void NavigationPane::rebuild()
 
     m_tree->clear();
 
-    QTreeWidgetItem *favorites = addGroup(tr("Favorites"), {"favorites", "bookmarks", "starred"});
-    QTreeWidgetItem *libraries = addGroup(tr("Libraries"), {"folder-library", "folder-documents", "folder"});
-    QTreeWidgetItem *computer  = addGroup(tr("Computer"), {"computer", "computer-laptop"},
-                                          Locations::computer());
-    QTreeWidgetItem *network   = addGroup(tr("Network"), {"folder-network", "network-workgroup", "network-server"},
-                                          QUrl(QStringLiteral("remote:/")));
+    QTreeWidgetItem *favorites =
+        addGroup(tr("Favorites"), {"favorites", "bookmarks", "starred"});
+    QTreeWidgetItem *libraries =
+        addGroup(tr("Libraries"), {"folder-library", "folder-documents", "folder"});
+    QTreeWidgetItem *computer =
+        addGroup(tr("Computer"), {"computer", "computer-laptop"}, Locations::computer());
+    QTreeWidgetItem *network =
+        addGroup(tr("Network"), {"folder-network", "network-workgroup", "network-server"},
+                 QUrl(QStringLiteral("remote:/")));
 
     for (int row = 0; row < m_places->rowCount(); ++row) {
         const QModelIndex index = m_places->index(row, 0);
@@ -404,15 +421,20 @@ void NavigationPane::rebuild()
 
         QTreeWidgetItem *group = nullptr;
         switch (m_places->groupType(index)) {
-        case KFilePlacesModel::PlacesType:
+        case KFilePlacesModel::PlacesType: {
             // Win7 keeps no home entry here, it being a third route to a place
             // the other two groups already reach
-            if (placeUrl.isLocalFile()
-                && QDir::cleanPath(placeUrl.toLocalFile()) == QDir::homePath()) {
+            const bool isHome = placeUrl.isLocalFile()
+                && QDir::cleanPath(placeUrl.toLocalFile()) == QDir::homePath();
+            if (isHome)
                 continue;
-            }
-            group = isLibraryPlace(placeUrl) ? libraries : favorites;
+
+            if (isLibraryPlace(placeUrl))
+                group = libraries;
+            else
+                group = favorites;
             break;
+        }
         case KFilePlacesModel::RecentlySavedType:
         case KFilePlacesModel::SearchForType:
             group = favorites;
@@ -469,8 +491,9 @@ QTreeWidgetItem *NavigationPane::highlightTarget() const
         return nullptr;
 
     const bool local = m_currentUrl.isLocalFile();
-    const QString target = local ? QDir::cleanPath(m_currentUrl.toLocalFile())
-                                 : QString();
+    QString target;
+    if (local)
+        target = QDir::cleanPath(m_currentUrl.toLocalFile());
 
     // Every row rather than the places model's closest entry, the tree also
     // carrying headings that are destinations and subfolders found on disk
@@ -488,9 +511,12 @@ QTreeWidgetItem *NavigationPane::highlightTarget() const
         if (!local || !url.isLocalFile())
             continue;
 
+        // Only a folder the current one is inside of, so /home/a must not
+        // count as containing /home/ab
         const QString path = QDir::cleanPath(url.toLocalFile());
-        const QString prefix = path.endsWith(QLatin1Char('/')) ? path
-                                                               : path + QLatin1Char('/');
+        QString prefix = path;
+        if (!prefix.endsWith(QLatin1Char('/')))
+            prefix += QLatin1Char('/');
         if (!target.startsWith(prefix))
             continue;
         if (path.length() > bestLength) {
@@ -524,8 +550,9 @@ void NavigationPane::showContextMenu(const QPoint &pos)
 
     const QUrl url = urlForItem(item);
     const int placeRow = item->data(0, kPlaceRowRole).toInt();
-    const QModelIndex placeIndex = placeRow >= 0 ? m_places->index(placeRow, 0)
-                                                 : QModelIndex();
+    QModelIndex placeIndex;
+    if (placeRow >= 0)
+        placeIndex = m_places->index(placeRow, 0);
 
     QMenu menu(this);
 
@@ -619,44 +646,47 @@ bool NavigationPane::eventFilter(QObject *watched, QEvent *event)
         QTreeWidgetItem *item = m_tree->itemAt(pos);
         const QUrl url = urlForItem(item);
         // Computer is not a directory and nothing can be copied into it
-        return Locations::isComputer(url) ? QUrl() : url;
+        if (Locations::isComputer(url))
+            return QUrl();
+        return url;
     };
 
     switch (event->type()) {
     case QEvent::MouseButtonPress: {
-        auto *e = static_cast<QMouseEvent *>(event);
-        if (e->button() != Qt::MiddleButton)
+        auto *mouse = static_cast<QMouseEvent *>(event);
+        if (mouse->button() != Qt::MiddleButton)
             break;
-        const QUrl url = urlForItem(m_tree->itemAt(e->position().toPoint()));
+        const QUrl url = urlForItem(m_tree->itemAt(mouse->position().toPoint()));
         if (url.isValid() && !Locations::isComputer(url))
             Q_EMIT newWindowRequested(url);
         return true;
     }
     case QEvent::DragEnter: {
-        auto *e = static_cast<QDragEnterEvent *>(event);
-        if (e->mimeData()->hasUrls()) {
-            e->acceptProposedAction();
+        auto *drag = static_cast<QDragEnterEvent *>(event);
+        if (drag->mimeData()->hasUrls()) {
+            drag->acceptProposedAction();
             return true;
         }
         break;
     }
     case QEvent::DragMove: {
-        auto *e = static_cast<QDragMoveEvent *>(event);
-        const QUrl target = targetAt(e->position().toPoint());
-        if (e->mimeData()->hasUrls() && target.isValid()) {
-            e->acceptProposedAction();
-            m_tree->setCurrentItem(m_tree->itemAt(e->position().toPoint()));
+        auto *drag = static_cast<QDragMoveEvent *>(event);
+        const QPoint pos = drag->position().toPoint();
+        const QUrl target = targetAt(pos);
+        if (drag->mimeData()->hasUrls() && target.isValid()) {
+            drag->acceptProposedAction();
+            m_tree->setCurrentItem(m_tree->itemAt(pos));
         } else {
-            e->ignore();
+            drag->ignore();
         }
         return true;
     }
     case QEvent::Drop: {
-        auto *e = static_cast<QDropEvent *>(event);
-        const QUrl target = targetAt(e->position().toPoint());
+        auto *drop = static_cast<QDropEvent *>(event);
+        const QUrl target = targetAt(drop->position().toPoint());
         if (target.isValid()) {
-            Q_EMIT dropped(e, target);
-            e->acceptProposedAction();
+            Q_EMIT dropped(drop, target);
+            drop->acceptProposedAction();
         }
         // Consumed either way, or the tree makes rows out of the dropped files
         return true;

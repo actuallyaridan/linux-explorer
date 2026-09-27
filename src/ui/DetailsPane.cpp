@@ -44,10 +44,13 @@ void DetailsPane::setContent(const QIcon &icon, const QString &primary,
 
 void DetailsPane::showFolderSummary(int itemCount, const QString &freeSpace)
 {
-    setContent(Aero::themeIcon({"folder"}),
-               itemCount == 1 ? tr("1 item")
-                              : tr("%1 items").arg(itemCount),
-               freeSpace);
+    QString count;
+    if (itemCount == 1)
+        count = tr("1 item");
+    else
+        count = tr("%1 items").arg(itemCount);
+
+    setContent(Aero::themeIcon({"folder"}), count, freeSpace);
 }
 
 void DetailsPane::showDrive(const QModelIndex &index)
@@ -58,8 +61,12 @@ void DetailsPane::showDrive(const QModelIndex &index)
     const QIcon icon = qvariant_cast<QIcon>(index.data(Qt::DecorationRole));
     const QString name = index.data(Qt::DisplayRole).toString();
 
-    QString detail = index.data(ComputerModel::RemovableRole).toBool()
-        ? tr("Removable Disk") : tr("Local Disk");
+    QString detail;
+    if (index.data(ComputerModel::RemovableRole).toBool())
+        detail = tr("Removable Disk");
+    else
+        detail = tr("Local Disk");
+
     if (index.data(ComputerModel::SizeKnownRole).toBool()) {
         const auto total = index.data(ComputerModel::TotalSizeRole).toULongLong();
         const auto available = index.data(ComputerModel::AvailableSizeRole).toULongLong();
@@ -85,10 +92,10 @@ void DetailsPane::showSelection(const QList<KFileItem> &items)
         const KFileItem &item = items.first();
         // A directory's size on disk is not the size of what it contains, so
         // Win7 shows the type instead
-        const QString detail = item.isDir()
-            ? item.mimeComment()
-            : QStringLiteral("%1  •  %2").arg(item.mimeComment(),
-                                              KIO::convertSize(item.size()));
+        QString detail = item.mimeComment();
+        if (!item.isDir())
+            detail = QStringLiteral("%1  •  %2").arg(item.mimeComment(),
+                                                     KIO::convertSize(item.size()));
         setContent(QIcon::fromTheme(item.iconName()), item.text(), detail);
         return;
     }
@@ -103,9 +110,10 @@ void DetailsPane::showSelection(const QList<KFileItem> &items)
     }
 
     // With a folder in the selection the total covers only the files
-    const QString detail = anyDirs
-        ? QStringLiteral("%1 (files only)").arg(KIO::convertSize(total))
-        : KIO::convertSize(total);
+    QString detail = KIO::convertSize(total);
+    if (anyDirs)
+        detail = QStringLiteral("%1 (files only)").arg(detail);
+
     setContent(Aero::themeIcon({"edit-select-all", "folder"}),
                QStringLiteral("%1 items selected").arg(items.size()), detail);
 }

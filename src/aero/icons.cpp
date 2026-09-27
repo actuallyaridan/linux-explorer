@@ -14,21 +14,27 @@ QStringList &fallbacks()
 
 QIcon tryIconName(const QString &name)
 {
-    QIcon icon = QIcon::fromTheme(name);
-    if (!icon.isNull()) return icon;
+    const QIcon icon = QIcon::fromTheme(name);
+    if (!icon.isNull())
+        return icon;
+
     return QIcon::fromTheme(name + QStringLiteral("-symbolic"));
 }
 
 QIcon themeIcon(std::initializer_list<const char *> names)
 {
-    for (const char *n : names) {
-        QIcon icon = tryIconName(QString::fromLatin1(n));
-        if (!icon.isNull()) return icon;
+    for (const char *name : names) {
+        const QIcon icon = tryIconName(QString::fromLatin1(name));
+        if (!icon.isNull())
+            return icon;
     }
-    for (const QString &n : std::as_const(fallbacks())) {
-        QIcon icon = QIcon::fromTheme(n);
-        if (!icon.isNull()) return icon;
+
+    for (const QString &name : std::as_const(fallbacks())) {
+        const QIcon icon = QIcon::fromTheme(name);
+        if (!icon.isNull())
+            return icon;
     }
+
     return QIcon();
 }
 

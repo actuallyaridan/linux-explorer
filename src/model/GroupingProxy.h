@@ -3,7 +3,6 @@
 #include <QAbstractProxyModel>
 #include <QHash>
 #include <QList>
-#include <QPair>
 #include <QString>
 
 class DirectoryModel;
@@ -59,6 +58,13 @@ private:
         }
     };
 
+    // Where a source row ended up, as the heading it is under and its place
+    // among that heading's rows
+    struct RowPosition {
+        int group = 0;
+        int indexInGroup = 0;
+    };
+
     // Resets only if the groups came out different, since most source churn
     // changes no grouping and a reset would throw away the selection
     void rebuild();
@@ -67,15 +73,15 @@ private:
     void scheduleRebuild();
 
     void computeGroups(QList<Group> *groups,
-                       QHash<int, QPair<int, int>> *lookup) const;
+                       QHash<int, RowPosition> *lookup) const;
     QString groupTitleFor(int sourceRow, int *rank) const;
 
     DirectoryModel *m_model = nullptr;
     QTimer *m_rebuildTimer = nullptr;
     QList<Group> m_groups;
 
-    // Source row to its group and its position within that group
-    QHash<int, QPair<int, int>> m_rowLookup;
+    // Source row to where it sits in m_groups
+    QHash<int, RowPosition> m_rowLookup;
 
     int m_groupColumn = -1;
 };

@@ -76,8 +76,10 @@ MountDialog::MountDialog(KFilePlacesModel *places, QWidget *parent)
     // when the model reports the outcome
     connect(m_places, &KFilePlacesModel::setupDone, this,
             [this](const QModelIndex &, bool success) {
-        m_status->setText(success ? tr("Drive mounted.")
-                                  : tr("The drive could not be mounted."));
+        if (success)
+            m_status->setText(tr("Drive mounted."));
+        else
+            m_status->setText(tr("The drive could not be mounted."));
         reloadDrives();
     });
     connect(m_places, &QAbstractItemModel::dataChanged, this, &MountDialog::reloadDrives);
@@ -102,9 +104,9 @@ void MountDialog::reloadDrives()
 
         // With the device node, so two identically labelled partitions can be
         // told apart before one is mounted
-        const QString name = DriveLabel::forPlace(m_places, index);
-        const bool needsSetup = m_places->setupNeeded(index);
-        const QString label = needsSetup ? tr("%1 (not mounted)").arg(name) : name;
+        QString label = DriveLabel::forPlace(m_places, index);
+        if (m_places->setupNeeded(index))
+            label = tr("%1 (not mounted)").arg(label);
 
         m_drives->addItem(m_places->icon(index), label);
         m_drives->setItemData(m_drives->count() - 1, row, kPlaceRowRole);
@@ -151,13 +153,12 @@ void MountDialog::updateButtons()
     m_unmount->setEnabled(!needsSetup && !systemDrive);
 
     if (systemDrive) {
-        m_status->setText(tr("This is a system drive and cannot "
-                             "be unmounted."));
+        m_status->setText(tr("This is a system drive and cannot be unmounted."));
     } else if (needsSetup) {
         m_status->setText(tr("This drive is not mounted."));
     } else {
-        m_status->setText(tr("Mounted at %1.").arg(
-            m_places->url(index).toLocalFile()));
+        const QString mountPoint = m_places->url(index).toLocalFile();
+        m_status->setText(tr("Mounted at %1.").arg(mountPoint));
     }
 }
 

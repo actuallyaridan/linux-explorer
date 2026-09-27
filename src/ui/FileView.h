@@ -117,6 +117,9 @@ private:
 
     void onRenameDelegate(const QModelIndex &index, const QString &name);
 
+    // The folder under the cursor, or the current folder for empty space
+    QUrl dropDestinationAt(QAbstractItemView *view, const QPoint &pos) const;
+
     // Shared, so the two views cannot answer different gestures
     void bindActivation(QAbstractItemView *view);
     void applyMode();
@@ -151,12 +154,14 @@ private:
     bool m_checkBoxes = false;
     bool m_singleClick = false;
 
+    // How far an inline rename has got: Normal when there is none, Locked
+    // while the editor is open, and Renaming once the new name was handed on
     enum class RenameState : quint8 {
-        NORMAL = 0,
-        LOCKED = 1,
-        RENAMING = 2
+        Normal,
+        Locked,
+        Renaming,
     };
-    RenameState m_renameState = RenameState::NORMAL;
+    RenameState m_renameState = RenameState::Normal;
     QUrl m_destination;
 
     // So switching a column on later does not reset every other width

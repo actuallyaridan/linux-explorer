@@ -7,37 +7,37 @@ namespace Aero {
 
 void setPointSize(QWidget *w, int pt)
 {
-    QFont f = w->font();
-    f.setPointSize(pt);
-    w->setFont(f);
+    QFont font = w->font();
+    font.setPointSize(pt);
+    w->setFont(font);
 }
 
 QLabel *label(const QString &text, int pt, const char *color)
 {
-    auto *l = new QLabel(text);
-    setPointSize(l, pt);
-    l->setStyleSheet(
+    auto *textLabel = new QLabel(text);
+    setPointSize(textLabel, pt);
+    textLabel->setStyleSheet(
         QStringLiteral("color: %1; background: transparent;").arg(QLatin1String(color)));
-    return l;
+    return textLabel;
 }
 
 QLabel *bodyLabel(const QString &text, bool link)
 {
     if (link) {
-        auto *l = new LinkLabel(text);
-        setPointSize(l, 9);
-        l->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-        return l;
+        auto *linkLabel = new LinkLabel(text);
+        setPointSize(linkLabel, 9);
+        linkLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        return linkLabel;
     }
 
-    auto *l = new QLabel(text);
-    setPointSize(l, 9);
+    auto *textLabel = new QLabel(text);
+    setPointSize(textLabel, 9);
     // Not through addWidget, where an alignment flag suppresses height for
     // width and clips a word wrapped label to one line
-    l->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    l->setStyleSheet(QStringLiteral("color: %1; background: transparent;")
-                         .arg(QLatin1String(Palette::Text)));
-    return l;
+    textLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    textLabel->setStyleSheet(QStringLiteral("color: %1; background: transparent;")
+                                 .arg(QLatin1String(Palette::Text)));
+    return textLabel;
 }
 
 QFrame *hairline(const char *color)
@@ -73,11 +73,11 @@ void LinkLabel::setUnderlineOnHover(bool on)
 
 void LinkLabel::setUnderlined(bool on)
 {
-    QFont f = font();
-    if (f.underline() == on)
+    QFont underlined = font();
+    if (underlined.underline() == on)
         return;
-    f.setUnderline(on);
-    setFont(f);
+    underlined.setUnderline(on);
+    setFont(underlined);
 }
 
 void LinkLabel::enterEvent(QEnterEvent *e)

@@ -87,17 +87,18 @@ void PreviewPane::setItems(const QList<KFileItem> &items)
     const KFileItem &item = items.first();
     m_pending = item.url();
 
+    QString detail = item.mimeComment();
+    if (!item.isDir())
+        detail = QStringLiteral("%1  •  %2").arg(item.mimeComment(),
+                                                 KIO::convertSize(item.size()));
     m_name->setText(item.text());
-    m_detail->setText(item.isDir()
-        ? item.mimeComment()
-        : QStringLiteral("%1  •  %2").arg(item.mimeComment(),
-                                          KIO::convertSize(item.size())));
+    m_detail->setText(detail);
 
     // Up immediately so the pane is never blank while the preview renders
     m_image->setPixmap(QIcon::fromTheme(item.iconName()).pixmap(64, 64));
 
-    KIO::PreviewJob *job = new KIO::PreviewJob(
-        KFileItemList({item}), QSize(kPreviewSize, kPreviewSize));
+    const QSize previewSize(kPreviewSize, kPreviewSize);
+    auto *job = new KIO::PreviewJob(KFileItemList({item}), previewSize);
     m_job = job;
     job->setIgnoreMaximumSize(false);
     job->setScaleType(KIO::PreviewJob::ScaledAndCached);

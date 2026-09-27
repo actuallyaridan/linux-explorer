@@ -57,11 +57,12 @@ void MenuButton::setShowArrow(bool show)
 
 QSize MenuButton::sizeHint() const
 {
-    const QFontMetrics fm(font());
-    const int arrow = m_showArrow ? kSpacing + kArrowWidth : 0;
+    const QFontMetrics metrics(font());
+    const int arrowWidth = m_showArrow ? kSpacing + kArrowWidth : 0;
+    const int width = kPadding + metrics.horizontalAdvance(text()) + arrowWidth + kPadding;
     // Never shorter than the hover pill, or the painter clips it
-    return QSize(kPadding + fm.horizontalAdvance(text()) + arrow + kPadding,
-                 qMax(fm.height() + 4, kPillHeight));
+    const int height = qMax(metrics.height() + 4, kPillHeight);
+    return QSize(width, height);
 }
 
 void MenuButton::enterEvent(QEnterEvent *e)
@@ -87,9 +88,8 @@ void MenuButton::paintEvent(QPaintEvent *)
         const QPixmap pill = art(isDown() ? pressedArt() : hoverArt());
         // At its own height and centred, since stretching softens the corners
         if (!pill.isNull()) {
-            drawStretchedBetweenCaps(
-                &p, QRect(0, (height() - pill.height()) / 2, width(), pill.height()),
-                pill, kPillCap);
+            const QRect pillRect(0, (height() - pill.height()) / 2, width(), pill.height());
+            drawStretchedBetweenCaps(&p, pillRect, pill, kPillCap);
         }
     }
 
@@ -103,9 +103,10 @@ void MenuButton::paintEvent(QPaintEvent *)
         return;
 
     const QPixmap arrow = arrowPixmap(Qt::DownArrow, m_normal, kArrowWidth);
-    const QSizeF as = arrow.deviceIndependentSize();
-    p.drawPixmap(QPointF(kPadding + textWidth + kSpacing,
-                         (height() - as.height()) / 2.0 + 1), arrow);
+    const QSizeF arrowSize = arrow.deviceIndependentSize();
+    const qreal arrowX = kPadding + textWidth + kSpacing;
+    const qreal arrowY = (height() - arrowSize.height()) / 2.0 + 1;
+    p.drawPixmap(QPointF(arrowX, arrowY), arrow);
 }
 
 ChevronButton::ChevronButton(QWidget *parent)
@@ -134,9 +135,10 @@ void ChevronButton::paintEvent(QPaintEvent *e)
     QPainter p(this);
     const QPixmap arrow = arrowPixmap(isChecked() ? Qt::UpArrow : Qt::DownArrow,
                                       Palette::rgb(Palette::LinkText));
-    const QSizeF s = arrow.deviceIndependentSize();
-    p.drawPixmap(QPointF((width() - s.width()) / 2.0,
-                         (height() - s.height()) / 2.0), arrow);
+    const QSizeF arrowSize = arrow.deviceIndependentSize();
+    const qreal arrowX = (width() - arrowSize.width()) / 2.0;
+    const qreal arrowY = (height() - arrowSize.height()) / 2.0;
+    p.drawPixmap(QPointF(arrowX, arrowY), arrow);
 }
 
 } // namespace Aero

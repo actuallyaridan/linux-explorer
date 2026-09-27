@@ -116,32 +116,95 @@ void setHeaderState(const QByteArray &state)
     QSettings().setValue(key("HeaderState"), state);
 }
 
-bool showHiddenFiles()          { return s_showHiddenFiles.get(); }
-void setShowHiddenFiles(bool show)      { s_showHiddenFiles.set(show); }
+bool showHiddenFiles()
+{
+    return s_showHiddenFiles.get();
+}
 
-bool hideKnownExtensions()      { return s_hideKnownExtensions.get(); }
-void setHideKnownExtensions(bool hide)  { s_hideKnownExtensions.set(hide); }
+void setShowHiddenFiles(bool show)
+{
+    s_showHiddenFiles.set(show);
+}
 
-bool useCheckBoxes()            { return s_useCheckBoxes.get(); }
-void setUseCheckBoxes(bool use)         { s_useCheckBoxes.set(use); }
+bool hideKnownExtensions()
+{
+    return s_hideKnownExtensions.get();
+}
 
-bool alwaysShowMenus()          { return s_alwaysShowMenus.get(); }
-void setAlwaysShowMenus(bool show)      { s_alwaysShowMenus.set(show); }
+void setHideKnownExtensions(bool hide)
+{
+    s_hideKnownExtensions.set(hide);
+}
 
-bool browseInNewWindow()        { return s_browseInNewWindow.get(); }
-void setBrowseInNewWindow(bool separate) { s_browseInNewWindow.set(separate); }
+bool useCheckBoxes()
+{
+    return s_useCheckBoxes.get();
+}
 
-bool singleClickToOpen()        { return s_singleClickToOpen.get(); }
-void setSingleClickToOpen(bool single)  { s_singleClickToOpen.set(single); }
+void setUseCheckBoxes(bool use)
+{
+    s_useCheckBoxes.set(use);
+}
 
-bool searchFileContents()       { return s_searchFileContents.get(); }
-void setSearchFileContents(bool contents) { s_searchFileContents.set(contents); }
+bool alwaysShowMenus()
+{
+    return s_alwaysShowMenus.get();
+}
 
-bool searchSubfolders()         { return s_searchSubfolders.get(); }
-void setSearchSubfolders(bool recursive) { s_searchSubfolders.set(recursive); }
+void setAlwaysShowMenus(bool show)
+{
+    s_alwaysShowMenus.set(show);
+}
 
-bool notifyUnmountedDrives()    { return s_notifyUnmountedDrives.get(); }
-void setNotifyUnmountedDrives(bool notify) { s_notifyUnmountedDrives.set(notify); }
+bool browseInNewWindow()
+{
+    return s_browseInNewWindow.get();
+}
+
+void setBrowseInNewWindow(bool separate)
+{
+    s_browseInNewWindow.set(separate);
+}
+
+bool singleClickToOpen()
+{
+    return s_singleClickToOpen.get();
+}
+
+void setSingleClickToOpen(bool single)
+{
+    s_singleClickToOpen.set(single);
+}
+
+bool searchFileContents()
+{
+    return s_searchFileContents.get();
+}
+
+void setSearchFileContents(bool contents)
+{
+    s_searchFileContents.set(contents);
+}
+
+bool searchSubfolders()
+{
+    return s_searchSubfolders.get();
+}
+
+void setSearchSubfolders(bool recursive)
+{
+    s_searchSubfolders.set(recursive);
+}
+
+bool notifyUnmountedDrives()
+{
+    return s_notifyUnmountedDrives.get();
+}
+
+void setNotifyUnmountedDrives(bool notify)
+{
+    s_notifyUnmountedDrives.set(notify);
+}
 
 void clearRememberedViewModes()
 {
@@ -171,8 +234,8 @@ void addRecentPath(const QString &path)
 
 ViewMode defaultViewMode()
 {
-    return ViewMode(clampMode(
-        QSettings().value(key("DefaultMode"), int(ViewMode::Details)).toInt()));
+    const int stored = QSettings().value(key("DefaultMode"), int(ViewMode::Details)).toInt();
+    return ViewMode(clampMode(stored));
 }
 
 void setDefaultViewMode(ViewMode mode)
@@ -219,8 +282,10 @@ void setViewModeFor(const QUrl &url, ViewMode mode)
     // dropping an arbitrary quarter keeps this to one sweep per hundred folders
     const QStringList existing = s.childKeys();
     const QString entry = folderKey(url);
-    if (existing.size() >= kMaxRememberedFolders && !existing.contains(entry)) {
-        for (int i = 0; i < existing.size() / 4; ++i)
+    const bool full = existing.size() >= kMaxRememberedFolders;
+    if (full && !existing.contains(entry)) {
+        const int toRemove = existing.size() / 4;
+        for (int i = 0; i < toRemove; ++i)
             s.remove(existing.at(i));
     }
 

@@ -108,19 +108,8 @@ public:
     // showing hidden files brings them back
     bool filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const override
     {
-        if (Branding::windowsFriendlyMode()) {
-            if (auto *dirModel = qobject_cast<KDirModel *>(sourceModel())) {
-                if (!dirModel->dirLister()->showHiddenFiles()) {
-                    const QModelIndex sourceIndex =
-                        dirModel->index(sourceRow, KDirModel::Name, sourceParent);
-                    const KFileItem item = dirModel->itemForIndex(sourceIndex);
-                    if (!item.isNull()
-                        && Branding::isSystemFolder(item.url().toLocalFile())) {
-                        return false;
-                    }
-                }
-            }
-        }
+        if (isHiddenSystemFolder(sourceRow, sourceParent))
+            return false;
         return KDirSortFilterProxyModel::filterAcceptsRow(sourceRow, sourceParent);
     }
 
@@ -129,20 +118,20 @@ public:
     // base class, applied before it delegates here
     bool subSortLessThan(const QModelIndex &left, const QModelIndex &right) const override
     {
-        if (left.column() == KDirModel::Name) {
-            if (auto *dirModel = qobject_cast<KDirModel *>(sourceModel())) {
-                const KFileItem leftItem = dirModel->itemForIndex(left);
-                const KFileItem rightItem = dirModel->itemForIndex(right);
-                if (!leftItem.isNull() && !rightItem.isNull()) {
-                    const QString leftName = displayName(leftItem);
-                    const QString rightName = displayName(rightItem);
-                    const int order =
-                        QString::compare(leftName, rightName, Qt::CaseInsensitive);
-                    if (order != 0)
-                        return order < 0;
-                }
-            }
-        }
+        if (left.column() != KDirModel::Name)
+            return KDirSortFilterProxyModel::subSortLessThan(left, right);
+
+        const KFileItem leftItem = fileItem(left);
+        const KFileItem rightItem = fileItem(right);
+        if (leftItem.isNull() || rightItem.isNull())
+            return KDirSortFilterProxyModel::subSortLessThan(left, right);
+
+        const QString leftName = displayName(leftItem);
+        const QString rightName = displayName(rightItem);
+        const int order = QString::compare(leftName, rightName, Qt::CaseInsensitive);
+        if (order != 0)
+            return order < 0;
+
         return KDirSortFilterProxyModel::subSortLessThan(left, right);
     }
 
@@ -170,11 +159,9 @@ public:
             if (cut || ghosted) {
                 const QVariant base = KDirSortFilterProxyModel::data(index, role);
                 const QIcon icon = qvariant_cast<QIcon>(base);
-                if (!icon.isNull()) {
-                    return fadedIcon(icon,
-                                     cut ? kCutIconOpacity : kHiddenIconOpacity,
-                                     cut);
-                }
+                const qreal opacity = cut ? kCutIconOpacity : kHiddenIconOpacity;
+                if (!icon.isNull())
+                    return fadedIcon(icon, opacity, cut);
             }
         }
 
@@ -216,6 +203,24 @@ private:
         return dirModel->itemForIndex(sourceIndex);
     }
 
+    bool isHiddenSystemFolder(int sourceRow, const QModelIndex &sourceParent) const
+    {
+        if (!Branding::windowsFriendlyMode())
+            return false;
+
+        auto *dirModel = qobject_cast<KDirModel *>(sourceModel());
+        if (!dirModel || dirModel->dirLister()->showHiddenFiles())
+            return false;
+
+        const QModelIndex sourceIndex =
+            dirModel->index(sourceRow, KDirModel::Name, sourceParent);
+        const KFileItem item = dirModel->itemForIndex(sourceIndex);
+        if (item.isNull())
+            return false;
+
+        return Branding::isSystemFolder(item.url().toLocalFile());
+    }
+
     QString displayName(const KFileItem &item) const
     {
         QString name = item.text();
@@ -233,11 +238,12 @@ private:
                 QMimeDatabase().mimeTypeForName(QStringLiteral("application/octet-stream")).name();
             if (!item.mimetype().isEmpty() && item.mimetype() != unknown) {
                 // QFileInfo::completeSuffix without the QFileInfo, this running
-                // twice per sort comparison
+                // twice per sort comparison, and a dot at either end of the
+                // name does not start an extension
                 const int dot = name.indexOf(QLatin1Char('.'));
-                const int suffix = dot < 0 ? 0 : name.length() - dot - 1;
-                if (suffix > 0 && name.length() > suffix + 1)
-                    name.chop(suffix + 1);
+                const bool hasExtension = dot > 0 && dot < name.length() - 1;
+                if (hasExtension)
+                    name.truncate(dot);
             }
         }
         return name;
@@ -276,8 +282,9 @@ private:
 
         // The whole row, working out which changed costing more than a repaint
         if (rowCount() > 0) {
-            Q_EMIT dataChanged(index(0, 0), index(rowCount() - 1, columnCount() - 1),
-                               {Qt::DecorationRole});
+            const QModelIndex topLeft = index(0, 0);
+            const QModelIndex bottomRight = index(rowCount() - 1, columnCount() - 1);
+            Q_EMIT dataChanged(topLeft, bottomRight, {Qt::DecorationRole});
         }
     }
 
@@ -287,8 +294,8 @@ private:
     // type and with previews on gave every ghosted photo the same picture
     QIcon fadedIcon(const QIcon &source, qreal opacity, bool cut) const
     {
-        const QString key = (cut ? QStringLiteral("cut:") : QStringLiteral("hidden:"))
-                          + QString::number(source.cacheKey());
+        const QString prefix = cut ? QStringLiteral("cut:") : QStringLiteral("hidden:");
+        const QString key = prefix + QString::number(source.cacheKey());
         const auto cached = m_fadedIcons.constFind(key);
         if (cached != m_fadedIcons.constEnd())
             return cached.value();
@@ -359,8 +366,9 @@ DirectoryModel::DirectoryModel(QObject *parent)
         QUrl url;
         if (auto *simple = qobject_cast<KIO::SimpleJob *>(job))
             url = simple->url();
-        Q_EMIT errorOccurred(job->error(), job->errorString(),
-                             url.isValid() ? url : m_dirModel->dirLister()->url());
+        if (!url.isValid())
+            url = m_dirModel->dirLister()->url();
+        Q_EMIT errorOccurred(job->error(), job->errorString(), url);
     });
     connect(lister, &KCoreDirLister::itemsAdded, this,
             [this](const QUrl &, const KFileItemList &items) {
@@ -426,10 +434,12 @@ void DirectoryModel::setVisibleColumns(const QList<int> &sourceColumns)
 void DirectoryModel::setColumnVisible(int sourceColumn, bool visible)
 {
     QList<int> columns = m_proxy->columns();
-    if (visible && !columns.contains(sourceColumn))
-        columns.append(sourceColumn);
-    else if (!visible)
+    if (visible) {
+        if (!columns.contains(sourceColumn))
+            columns.append(sourceColumn);
+    } else {
         columns.removeAll(sourceColumn);
+    }
     m_proxy->setColumns(columns);
 }
 
@@ -442,9 +452,7 @@ int DirectoryModel::viewColumnFor(int sourceColumn) const
 {
     // The survivors stay in source order, so a column's view index is how many
     // enabled columns sort before it
-    const QList<int> columns = m_proxy->columns();
-    const int at = columns.indexOf(sourceColumn);
-    return at;
+    return m_proxy->columns().indexOf(sourceColumn);
 }
 
 int DirectoryModel::sourceColumnFor(int viewColumn) const

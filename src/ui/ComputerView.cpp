@@ -36,16 +36,16 @@ constexpr int kTileSpacingV = 8;
 constexpr int kIconGap = 10;
 constexpr int kLineGap = 3;
 
-int tileHeight(const QFontMetrics &fm)
+int tileHeight(const QFontMetrics &metrics)
 {
-    const int text = fm.height() * 2 + 2 * kLineGap + Aero::kCapacityBarHeight;
-    return qMax(48, text) + 8;
+    const int textHeight = metrics.height() * 2 + 2 * kLineGap + Aero::kCapacityBarHeight;
+    return qMax(48, textHeight) + 8;
 }
 
-int contentHeight(const QFontMetrics &fm)
+int contentHeight(const QFontMetrics &metrics)
 {
-    const int text = fm.height() + kLineGap + Aero::kCapacityBarHeight;
-    return qMax(32, text) + 10;
+    const int textHeight = metrics.height() + kLineGap + Aero::kCapacityBarHeight;
+    return qMax(32, textHeight) + 10;
 }
 
 QModelIndex indexForUrl(const QAbstractItemModel *model, const QUrl &url)
@@ -81,6 +81,84 @@ protected:
 private:
     bool m_removable;
 };
+
+// What a tile or content row draws beside a drive's icon
+struct DriveText {
+    QString name;
+    // How full it is, or the filesystem when the size is not known
+    QString figures;
+    bool sizeKnown = false;
+    int percentUsed = 0;
+    QColor primary;
+    QColor secondary;
+};
+
+// The name, the capacity bar and the figures stacked, and centred as a block
+void paintTileText(QPainter *painter, const QRect &area, const QFontMetrics &metrics,
+                   const DriveText &drive)
+{
+    const int lineHeight = metrics.height();
+    const int barWidth = qMin(Aero::kCapacityBarWidth, area.width());
+
+    int blockHeight = lineHeight * 2 + kLineGap;
+    if (drive.sizeKnown)
+        blockHeight += kLineGap + Aero::kCapacityBarHeight;
+
+    int y = area.top() + (area.height() - blockHeight) / 2;
+
+    const QRect nameRect(area.left(), y, area.width(), lineHeight);
+    painter->setPen(drive.primary);
+    painter->drawText(nameRect, Qt::AlignLeft | Qt::AlignVCenter,
+                      metrics.elidedText(drive.name, Qt::ElideRight, area.width()));
+    y += lineHeight + kLineGap;
+
+    if (drive.sizeKnown) {
+        const QRect barRect(area.left(), y, barWidth, Aero::kCapacityBarHeight);
+        Aero::paintCapacityBar(painter, barRect, drive.percentUsed,
+                               Explorer::Art::capacityBar());
+        y += Aero::kCapacityBarHeight + kLineGap;
+    }
+
+    const QRect figuresRect(area.left(), y, area.width(), lineHeight);
+    painter->setPen(drive.secondary);
+    painter->drawText(figuresRect, Qt::AlignLeft | Qt::AlignVCenter,
+                      metrics.elidedText(drive.figures, Qt::ElideRight, area.width()));
+}
+
+// The name over its bar on the left, and the figures at the far edge
+void paintContentText(QPainter *painter, const QRect &area, const QFontMetrics &metrics,
+                      const DriveText &drive)
+{
+    const int lineHeight = metrics.height();
+    const int barWidth = qMin(Aero::kCapacityBarWidth, area.width());
+    const int figuresWidth = qMin(metrics.horizontalAdvance(drive.figures) + 16,
+                                  area.width() / 2);
+    const int leftWidth = qMax(60, area.width() - figuresWidth);
+
+    int blockHeight = lineHeight;
+    if (drive.sizeKnown)
+        blockHeight += kLineGap + Aero::kCapacityBarHeight;
+
+    const int y = area.top() + (area.height() - blockHeight) / 2;
+
+    const QRect nameRect(area.left(), y, leftWidth, lineHeight);
+    painter->setPen(drive.primary);
+    painter->drawText(nameRect, Qt::AlignLeft | Qt::AlignVCenter,
+                      metrics.elidedText(drive.name, Qt::ElideRight, leftWidth));
+
+    if (drive.sizeKnown) {
+        const QRect barRect(area.left(), y + lineHeight + kLineGap,
+                            qMin(barWidth, leftWidth), Aero::kCapacityBarHeight);
+        Aero::paintCapacityBar(painter, barRect, drive.percentUsed,
+                               Explorer::Art::capacityBar());
+    }
+
+    const QRect figuresRect(area.left() + leftWidth, area.top(),
+                            area.width() - leftWidth, area.height());
+    painter->setPen(drive.secondary);
+    painter->drawText(figuresRect, Qt::AlignRight | Qt::AlignVCenter,
+                      metrics.elidedText(drive.figures, Qt::ElideRight, figuresWidth));
+}
 
 // The two layouts that carry a capacity bar, the rest showing none in Win7
 // either and going through the base delegate untouched
@@ -127,11 +205,6 @@ public:
         style->drawControl(QStyle::CE_ItemViewItem, &opt, painter, opt.widget);
 
         const bool selected = opt.state & QStyle::State_Selected;
-        const QColor primary = selected ? opt.palette.color(QPalette::HighlightedText)
-                                        : Aero::Palette::rgb(Aero::Palette::Text);
-        const QColor secondary = selected ? opt.palette.color(QPalette::HighlightedText)
-                                          : Aero::Palette::rgb(Aero::Palette::MutedText);
-
         const int iconSize = (m_layout == Tile) ? 48 : 32;
         const QRect body = option.rect.adjusted(3, 4, -3, -4);
 
@@ -139,93 +212,61 @@ public:
         const QRect iconRect(body.left(),
                              body.top() + (body.height() - iconSize) / 2,
                              iconSize, iconSize);
-        icon.paint(painter, iconRect, Qt::AlignCenter,
-                   selected ? QIcon::Selected : QIcon::Normal);
+        const QIcon::Mode iconMode = selected ? QIcon::Selected : QIcon::Normal;
+        icon.paint(painter, iconRect, Qt::AlignCenter, iconMode);
 
-        const QRect text = body.adjusted(iconSize + kIconGap, 0, 0, 0);
-        if (text.width() <= 0)
+        const QRect textArea = body.adjusted(iconSize + kIconGap, 0, 0, 0);
+        if (textArea.width() <= 0)
             return;
 
-        const bool known = index.data(ComputerModel::SizeKnownRole).toBool();
-        const auto total = index.data(ComputerModel::TotalSizeRole).toULongLong();
-        const auto available = index.data(ComputerModel::AvailableSizeRole).toULongLong();
-
-        // A pseudo filesystem can report nothing at all
-        const int percentUsed = (known && total > 0)
-            ? qRound(100.0 * double(total - available) / double(total))
-            : 0;
-
-        const QString name = index.data(Qt::DisplayRole).toString();
-        // Unmounted or unreadable, so listed but with no figure to draw from;
-        // the partition's filesystem stands in for the missing numbers
-        const QString fsType = index.data(ComputerModel::FileSystemTypeRole).toString();
-        const QString figures = known
-            ? QObject::tr("%1 free of %2").arg(KIO::convertSize(available),
-                                               KIO::convertSize(total))
-            : fsType;
-
-        const QFontMetrics fm(opt.font);
-        const int lineHeight = fm.height();
-        const int barWidth = qMin(Aero::kCapacityBarWidth, text.width());
+        const DriveText drive = driveText(index, selected, opt.palette);
 
         painter->save();
         painter->setFont(opt.font);
-
-        if (m_layout == Tile) {
-            const int block = known
-                ? lineHeight * 2 + 2 * kLineGap + Aero::kCapacityBarHeight
-                : lineHeight * 2 + kLineGap;
-            int y = text.top() + (text.height() - block) / 2;
-
-            painter->setPen(primary);
-            painter->drawText(QRect(text.left(), y, text.width(), lineHeight),
-                              Qt::AlignLeft | Qt::AlignVCenter,
-                              fm.elidedText(name, Qt::ElideRight, text.width()));
-            y += lineHeight + kLineGap;
-
-            if (known) {
-                Aero::paintCapacityBar(
-                    painter, QRect(text.left(), y, barWidth, Aero::kCapacityBarHeight),
-                    percentUsed, Explorer::Art::capacityBar());
-                y += Aero::kCapacityBarHeight + kLineGap;
-            }
-
-            painter->setPen(secondary);
-            painter->drawText(QRect(text.left(), y, text.width(), lineHeight),
-                              Qt::AlignLeft | Qt::AlignVCenter,
-                              fm.elidedText(figures, Qt::ElideRight, text.width()));
-        } else {
-            // Name over its bar on the left, figures at the far edge
-            const int figuresWidth = qMin(fm.horizontalAdvance(figures) + 16,
-                                          text.width() / 2);
-            const int leftWidth = qMax(60, text.width() - figuresWidth);
-            const int block = lineHeight
-                + (known ? kLineGap + Aero::kCapacityBarHeight : 0);
-            const int y = text.top() + (text.height() - block) / 2;
-
-            painter->setPen(primary);
-            painter->drawText(QRect(text.left(), y, leftWidth, lineHeight),
-                              Qt::AlignLeft | Qt::AlignVCenter,
-                              fm.elidedText(name, Qt::ElideRight, leftWidth));
-            if (known) {
-                Aero::paintCapacityBar(
-                    painter,
-                    QRect(text.left(), y + lineHeight + kLineGap,
-                          qMin(barWidth, leftWidth), Aero::kCapacityBarHeight),
-                    percentUsed, Explorer::Art::capacityBar());
-            }
-
-            painter->setPen(secondary);
-            painter->drawText(QRect(text.left() + leftWidth, text.top(),
-                                    text.width() - leftWidth, text.height()),
-                              Qt::AlignRight | Qt::AlignVCenter,
-                              fm.elidedText(figures, Qt::ElideRight, figuresWidth));
-        }
-
+        const QFontMetrics metrics(opt.font);
+        if (m_layout == Tile)
+            paintTileText(painter, textArea, metrics, drive);
+        else
+            paintContentText(painter, textArea, metrics, drive);
         painter->restore();
     }
 
 private:
+    static DriveText driveText(const QModelIndex &index, bool selected,
+                               const QPalette &palette)
+    {
+        DriveText drive;
+        drive.name = index.data(Qt::DisplayRole).toString();
+        drive.sizeKnown = index.data(ComputerModel::SizeKnownRole).toBool();
+
+        const auto total = index.data(ComputerModel::TotalSizeRole).toULongLong();
+        const auto available = index.data(ComputerModel::AvailableSizeRole).toULongLong();
+
+        // A pseudo filesystem can report nothing at all
+        if (drive.sizeKnown && total > 0) {
+            const double used = double(total - available);
+            drive.percentUsed = qRound(100.0 * used / double(total));
+        }
+
+        // Unmounted or unreadable, so listed but with no figure to draw from;
+        // the partition's filesystem stands in for the missing numbers
+        if (drive.sizeKnown) {
+            drive.figures = QObject::tr("%1 free of %2").arg(KIO::convertSize(available),
+                                                             KIO::convertSize(total));
+        } else {
+            drive.figures = index.data(ComputerModel::FileSystemTypeRole).toString();
+        }
+
+        if (selected) {
+            drive.primary = palette.color(QPalette::HighlightedText);
+            drive.secondary = palette.color(QPalette::HighlightedText);
+        } else {
+            drive.primary = Aero::Palette::rgb(Aero::Palette::Text);
+            drive.secondary = Aero::Palette::rgb(Aero::Palette::MutedText);
+        }
+        return drive;
+    }
+
     Layout m_layout = Tile;
     int m_rowWidth = 400;
 };
@@ -263,12 +304,14 @@ public:
         if (viewMode() == QListView::IconMode && isWrapping()) {
             const int cell = qMax(1, grid.width());
             const int perRow = qMax(1, width / cell);
+            // Rounded up, so a part filled last row still counts
             const int rows = (count + perRow - 1) / perRow;
             return QSize(cell, rows * qMax(1, grid.height()));
         }
 
-        const int rowHeight = grid.height() > 0 ? grid.height()
-                                                : qMax(1, sizeHintForRow(0));
+        int rowHeight = grid.height();
+        if (rowHeight <= 0)
+            rowHeight = qMax(1, sizeHintForRow(0));
         return QSize(width, count * rowHeight);
     }
 
@@ -511,7 +554,7 @@ void ComputerView::applyMode()
     for (const Section &section : std::as_const(m_sections)) {
         auto *view = static_cast<DriveList *>(section.view);
         auto *delegate = static_cast<DriveDelegate *>(view->itemDelegate());
-        const QFontMetrics fm = view->fontMetrics();
+        const QFontMetrics metrics = view->fontMetrics();
 
         view->setIconSize(QSize(iconSize, iconSize));
         view->setFullWidthRows(m_mode == Settings::ViewMode::Content);
@@ -536,7 +579,7 @@ void ComputerView::applyMode()
             view->setWrapping(true);
             view->setWordWrap(false);
             view->setGridSize(QSize(kTileWidth + kTileSpacingH,
-                                    tileHeight(fm) + kTileSpacingV));
+                                    tileHeight(metrics) + kTileSpacingV));
             break;
 
         case Settings::ViewMode::Content:
@@ -546,7 +589,7 @@ void ComputerView::applyMode()
             view->setFlow(QListView::TopToBottom);
             view->setWrapping(false);
             view->setWordWrap(false);
-            view->setGridSize(QSize(view->viewport()->width(), contentHeight(fm)));
+            view->setGridSize(QSize(view->viewport()->width(), contentHeight(metrics)));
             break;
 
         default:
@@ -558,7 +601,7 @@ void ComputerView::applyMode()
             view->setWordWrap(true);
             view->setTextElideMode(Qt::ElideRight);
             view->setGridSize(QSize(qMax(iconSize + 24, 90),
-                                    iconSize + 4 * fm.height()));
+                                    iconSize + 4 * metrics.height()));
             break;
         }
 
@@ -612,15 +655,14 @@ void ComputerView::restoreSelection()
     // Restating it clears the other views, reentering here through their own
     // selection signals
     m_syncing = true;
+    const auto selectRow = QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows;
     for (QAbstractItemView *view : allViews()) {
         QItemSelectionModel *selection = view->selectionModel();
         const QModelIndex index = indexForUrl(view->model(), m_selectedUrl);
-        if (index.isValid()) {
-            selection->setCurrentIndex(index, QItemSelectionModel::ClearAndSelect
-                                                  | QItemSelectionModel::Rows);
-        } else {
+        if (index.isValid())
+            selection->setCurrentIndex(index, selectRow);
+        else
             selection->clearSelection();
-        }
     }
     m_syncing = false;
 }
@@ -637,19 +679,19 @@ bool ComputerView::stepToNeighbour(QListView *from, int direction)
     if (current < 0)
         return false;
 
-    for (int next = current + direction;
-         next >= 0 && next < m_sections.size(); next += direction) {
+    int next = current + direction;
+    while (next >= 0 && next < m_sections.size()) {
         const Section &section = m_sections.at(next);
         const int rows = section.filter->rowCount();
-        if (!section.container->isVisible() || rows == 0)
-            continue;
-
-        // Entering from above lands on the first drive and from below the last
-        const QModelIndex target = section.filter->index(
-            direction > 0 ? 0 : rows - 1, ComputerModel::Name);
-        section.view->setFocus();
-        section.view->setCurrentIndex(target);
-        return true;
+        if (section.container->isVisible() && rows > 0) {
+            // Entering from above lands on the first drive and from below the last
+            const int targetRow = (direction > 0) ? 0 : rows - 1;
+            const QModelIndex target = section.filter->index(targetRow, ComputerModel::Name);
+            section.view->setFocus();
+            section.view->setCurrentIndex(target);
+            return true;
+        }
+        next += direction;
     }
     return false;
 }

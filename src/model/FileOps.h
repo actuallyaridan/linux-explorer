@@ -33,10 +33,10 @@ class GlobalRenameContext : public QObject {
     Q_OBJECT
 
 public:
-    explicit GlobalRenameContext() { }
+    GlobalRenameContext() = default;
 
 Q_SIGNALS:
-    void finishRename(const QUrl& url);
+    void finishRename(const QUrl &url);
 };
 
 static GlobalRenameContext GLOBAL_RENAME_CONTEXT;

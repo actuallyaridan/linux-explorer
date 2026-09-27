@@ -59,22 +59,22 @@ bool FileManagerService::claim()
 
     // The private name decides primacy, so it is claimed before anything is
     // exported, and there is no queuing since a launch that waits is a hang
-    QDBusConnectionInterface *iface = bus.interface();
-    if (!iface)
+    QDBusConnectionInterface *busInterface = bus.interface();
+    if (!busInterface)
         return true;
-    const auto reply = iface->registerService(
+    const auto reply = busInterface->registerService(
         kAppService, QDBusConnectionInterface::DontQueueService,
         QDBusConnectionInterface::DontAllowReplacement);
-    if (!reply.isValid()
-        || reply.value() != QDBusConnectionInterface::ServiceRegistered) {
+    const bool gotAppName = reply.isValid()
+        && reply.value() == QDBusConnectionInterface::ServiceRegistered;
+    if (!gotAppName)
         return false;
-    }
 
     bus.registerObject(kObjectPath, this, QDBusConnection::ExportAllSlots);
 
     // Replacement allowed, so another file manager can take it over without a
     // restart, and failure here is ordinary
-    const auto shared = iface->registerService(
+    const auto shared = busInterface->registerService(
         kSharedService, QDBusConnectionInterface::DontQueueService,
         QDBusConnectionInterface::AllowReplacement);
     m_ownsSharedName = shared.isValid()
@@ -89,9 +89,10 @@ bool FileManagerService::forward(const QStringList &uris, bool reveal)
     if (!bus.isConnected())
         return false;
 
-    QDBusMessage call = QDBusMessage::createMethodCall(
-        kAppService, kObjectPath, kInterface,
-        reveal ? QStringLiteral("ShowItems") : QStringLiteral("ShowFolders"));
+    const QString method = reveal ? QStringLiteral("ShowItems")
+                                  : QStringLiteral("ShowFolders");
+    QDBusMessage call = QDBusMessage::createMethodCall(kAppService, kObjectPath,
+                                                       kInterface, method);
     call.setArguments({uris, startupId()});
 
     // Blocking, since this process is about to exit and returning early would

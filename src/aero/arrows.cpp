@@ -8,46 +8,47 @@ namespace Aero {
 
 QPixmap arrowPixmap(Qt::ArrowType dir, const QColor &color, int width)
 {
-    const int w = width;
-    const int h = qMax(3, (w * 4 + 3) / 7);
+    // The base runs across the arrow and the depth is how far its tip sticks out
+    const int base = width;
+    const int depth = qMax(3, (base * 4 + 3) / 7);
     const bool vertical = (dir == Qt::UpArrow || dir == Qt::DownArrow);
-    const QSize size = vertical ? QSize(w, h) : QSize(h, w);
+    const QSize size = vertical ? QSize(base, depth) : QSize(depth, base);
 
-    QPixmap pm(size * 2);
-    pm.setDevicePixelRatio(2);
-    pm.fill(Qt::transparent);
+    QPixmap pixmap(size * 2);
+    pixmap.setDevicePixelRatio(2);
+    pixmap.fill(Qt::transparent);
 
-    QPainter p(&pm);
-    p.setRenderHint(QPainter::Antialiasing, true);
-    p.setPen(Qt::NoPen);
-    p.setBrush(color);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(color);
 
-    QPolygonF poly;
+    QPolygonF triangle;
     switch (dir) {
     case Qt::UpArrow:
-        poly << QPointF(0, h) << QPointF(w, h) << QPointF(w / 2.0, 0);
+        triangle << QPointF(0, depth) << QPointF(base, depth) << QPointF(base / 2.0, 0);
         break;
     case Qt::LeftArrow:
-        poly << QPointF(h, 0) << QPointF(h, w) << QPointF(0, w / 2.0);
+        triangle << QPointF(depth, 0) << QPointF(depth, base) << QPointF(0, base / 2.0);
         break;
     case Qt::RightArrow:
-        poly << QPointF(0, 0) << QPointF(0, w) << QPointF(h, w / 2.0);
+        triangle << QPointF(0, 0) << QPointF(0, base) << QPointF(depth, base / 2.0);
         break;
     case Qt::DownArrow:
     default:
-        poly << QPointF(0, 0) << QPointF(w, 0) << QPointF(w / 2.0, h);
+        triangle << QPointF(0, 0) << QPointF(base, 0) << QPointF(base / 2.0, depth);
         break;
     }
-    p.drawPolygon(poly);
-    return pm;
+    painter.drawPolygon(triangle);
+    return pixmap;
 }
 
 QLabel *arrowLabel(Qt::ArrowType dir, const QColor &color, int width)
 {
-    auto *l = new QLabel;
-    l->setStyleSheet(QStringLiteral("background: transparent;"));
-    l->setPixmap(arrowPixmap(dir, color, width));
-    return l;
+    auto *label = new QLabel;
+    label->setStyleSheet(QStringLiteral("background: transparent;"));
+    label->setPixmap(arrowPixmap(dir, color, width));
+    return label;
 }
 
 } // namespace Aero

@@ -32,7 +32,7 @@ AboutDialog::AboutDialog(QWidget *parent)
 
     auto *nameLabel = new QLabel(QStringLiteral("File Explorer"));
     auto *companyLabel = new QLabel(QStringLiteral("@actuallyaridan"));
-    auto *versionLabel = new QLabel(QLatin1String("Version: 1.1"));
+    auto *versionLabel = new QLabel(QLatin1String(kVersion));
 
     auto *infoLayout = new QVBoxLayout;
     infoLayout->addWidget(nameLabel);

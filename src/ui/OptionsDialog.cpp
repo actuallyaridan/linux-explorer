@@ -50,6 +50,18 @@ QCheckBox *check(const QString &text)
     return box;
 }
 
+// Stacks the given widgets in a tight column, for the choices inside a group
+QWidget *column(std::initializer_list<QWidget *> widgets)
+{
+    auto *container = new QWidget;
+    auto *layout = new QVBoxLayout(container);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(4);
+    for (QWidget *widget : widgets)
+        layout->addWidget(widget);
+    return container;
+}
+
 // Decorative, and skipped silently when the theme has no such icon
 QWidget *illustrated(const QIcon &icon, QWidget *content)
 {
@@ -147,12 +159,7 @@ QWidget *OptionsDialog::buildGeneralTab()
     QGroupBox *browse = group(tr("Browse folders"));
     m_sameWindow = radio(tr("Open each folder in the same window"));
     m_ownWindow = radio(tr("Open each folder in its own window"));
-    auto *browseChoices = new QWidget;
-    auto *browseLayout = new QVBoxLayout(browseChoices);
-    browseLayout->setContentsMargins(0, 0, 0, 0);
-    browseLayout->setSpacing(4);
-    browseLayout->addWidget(m_sameWindow);
-    browseLayout->addWidget(m_ownWindow);
+    QWidget *browseChoices = column({m_sameWindow, m_ownWindow});
     browse->layout()->addWidget(
         illustrated(Aero::themeIcon({"folder-open", "folder"}), browseChoices));
     layout->addWidget(browse);
@@ -160,27 +167,27 @@ QWidget *OptionsDialog::buildGeneralTab()
     QGroupBox *click = group(tr("Click items as follows"));
     m_singleClick = radio(tr("Single-click to open an item"));
     m_doubleClick = radio(tr("Double-click to open an item (single-click to select)"));
-    auto *clickChoices = new QWidget;
-    auto *clickLayout = new QVBoxLayout(clickChoices);
-    clickLayout->setContentsMargins(0, 0, 0, 0);
-    clickLayout->setSpacing(4);
-    clickLayout->addWidget(m_singleClick);
-    clickLayout->addWidget(m_doubleClick);
+    QWidget *clickChoices = column({m_singleClick, m_doubleClick});
     click->layout()->addWidget(
         illustrated(Aero::themeIcon({"input-mouse", "mouse"}), clickChoices));
     layout->addWidget(click);
 
     layout->addStretch(1);
+    layout->addLayout(buildRestoreDefaultsRow());
 
+    return page;
+}
+
+QLayout *OptionsDialog::buildRestoreDefaultsRow()
+{
     auto *restore = new QPushButton(tr("Restore Defaults"));
     Aero::setPointSize(restore, 9);
     connect(restore, &QPushButton::clicked, this, &OptionsDialog::restoreDefaults);
-    auto *restoreRow = new QHBoxLayout;
-    restoreRow->addStretch(1);
-    restoreRow->addWidget(restore);
-    layout->addLayout(restoreRow);
 
-    return page;
+    auto *row = new QHBoxLayout;
+    row->addStretch(1);
+    row->addWidget(restore);
+    return row;
 }
 
 QTreeWidgetItem *OptionsDialog::addCheck(QTreeWidgetItem *parent,
@@ -300,20 +307,20 @@ QWidget *OptionsDialog::buildViewTab()
 
     m_advanced->expandAll();
     layout->addWidget(m_advanced, 1);
+    layout->addLayout(buildRestoreDefaultsRow());
 
     // The exclusivity the tree cannot express, and the dependency between the
     // two naming rows
     connect(m_advanced, &QTreeWidget::itemChanged, this,
             [this](QTreeWidgetItem *item, int) {
         QSignalBlocker blocker(m_advanced);
-        if (item == m_hiddenOff && item->checkState(0) == Qt::Checked)
-            m_hiddenOn->setCheckState(0, Qt::Unchecked);
-        else if (item == m_hiddenOn && item->checkState(0) == Qt::Checked)
-            m_hiddenOff->setCheckState(0, Qt::Unchecked);
-        else if (item == m_hiddenOff || item == m_hiddenOn) {
-            // Neither set is not a state the setting has
-            if (m_hiddenOff->checkState(0) == Qt::Unchecked
-                && m_hiddenOn->checkState(0) == Qt::Unchecked) {
+
+        if (item == m_hiddenOff || item == m_hiddenOn) {
+            QTreeWidgetItem *other = (item == m_hiddenOff) ? m_hiddenOn : m_hiddenOff;
+            if (item->checkState(0) == Qt::Checked) {
+                other->setCheckState(0, Qt::Unchecked);
+            } else if (other->checkState(0) == Qt::Unchecked) {
+                // Neither set is not a state the setting has
                 item->setCheckState(0, Qt::Checked);
             }
         }
@@ -325,14 +332,6 @@ QWidget *OptionsDialog::buildViewTab()
                 m_windowsNames->setCheckState(0, Qt::Unchecked);
         }
     });
-
-    auto *restore = new QPushButton(tr("Restore Defaults"));
-    Aero::setPointSize(restore, 9);
-    connect(restore, &QPushButton::clicked, this, &OptionsDialog::restoreDefaults);
-    auto *restoreRow = new QHBoxLayout;
-    restoreRow->addStretch(1);
-    restoreRow->addWidget(restore);
-    layout->addLayout(restoreRow);
 
     return page;
 }
@@ -357,13 +356,7 @@ QWidget *OptionsDialog::buildSearchTab()
     cost->setStyleSheet(QStringLiteral("color: %1;")
                         .arg(QLatin1String(Aero::Palette::MutedText)));
 
-    auto *whatChoices = new QWidget;
-    auto *whatLayout = new QVBoxLayout(whatChoices);
-    whatLayout->setContentsMargins(0, 0, 0, 0);
-    whatLayout->setSpacing(4);
-    whatLayout->addWidget(m_namesOnly);
-    whatLayout->addWidget(m_namesAndContents);
-    whatLayout->addWidget(cost);
+    QWidget *whatChoices = column({m_namesOnly, m_namesAndContents, cost});
     what->layout()->addWidget(
         illustrated(Aero::themeIcon({"system-search", "edit-find"}), whatChoices));
     layout->addWidget(what);
@@ -377,14 +370,7 @@ QWidget *OptionsDialog::buildSearchTab()
     layout->addWidget(how);
 
     layout->addStretch(1);
-
-    auto *restore = new QPushButton(tr("Restore Defaults"));
-    Aero::setPointSize(restore, 9);
-    connect(restore, &QPushButton::clicked, this, &OptionsDialog::restoreDefaults);
-    auto *restoreRow = new QHBoxLayout;
-    restoreRow->addStretch(1);
-    restoreRow->addWidget(restore);
-    layout->addLayout(restoreRow);
+    layout->addLayout(buildRestoreDefaultsRow());
 
     return page;
 }
@@ -401,7 +387,9 @@ void OptionsDialog::load()
     m_singleClick->setChecked(single);
     m_doubleClick->setChecked(!single);
 
-    const auto state = [](bool on) { return on ? Qt::Checked : Qt::Unchecked; };
+    const auto state = [](bool on) {
+        return on ? Qt::Checked : Qt::Unchecked;
+    };
     const bool showHidden = Settings::showHiddenFiles();
     m_hiddenOn->setCheckState(0, state(showHidden));
     m_hiddenOff->setCheckState(0, state(!showHidden));

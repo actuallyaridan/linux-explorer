@@ -84,8 +84,9 @@ QString rootFolderName(const QString &cleanPath)
 
     // The one label that is not a fixed translation
     if (cleanPath == QLatin1String("/etc")) {
-        return useWindowsNames() ? QStringLiteral("Windows")
-                                 : QStringLiteral("Linux");
+        if (useWindowsNames())
+            return QStringLiteral("Windows");
+        return QStringLiteral("Linux");
     }
 
     return systemFolders().value(cleanPath);
@@ -95,28 +96,40 @@ QString rootFolderName(const QString &cleanPath)
 const QHash<QString, QString> &userFolders()
 {
     static const QHash<QString, QString> map = [] {
-        QHash<QString, QString> m;
         const QString home = QDir::homePath();
-        const auto add = [&m](const QString &path, const QString &name) {
-            if (!path.isEmpty())
-                m.insert(QDir::cleanPath(path), name);
-        };
-
-        add(home + QStringLiteral("/.config"), QStringLiteral("AppData (Roaming)"));
-        add(home + QStringLiteral("/.local/share"), QStringLiteral("AppData (Local)"));
-        add(home + QStringLiteral("/.cache"), QStringLiteral("AppData (Cache)"));
-        return m;
+        QHash<QString, QString> folders;
+        folders.insert(QDir::cleanPath(home + QStringLiteral("/.config")),
+                       QStringLiteral("AppData (Roaming)"));
+        folders.insert(QDir::cleanPath(home + QStringLiteral("/.local/share")),
+                       QStringLiteral("AppData (Local)"));
+        folders.insert(QDir::cleanPath(home + QStringLiteral("/.cache")),
+                       QStringLiteral("AppData (Cache)"));
+        return folders;
     }();
     return map;
 }
 
 } // namespace
 
-bool windowsFriendlyMode()      { return s_friendlyMode.get(); }
-void setWindowsFriendlyMode(bool on) { s_friendlyMode.set(on); }
+bool windowsFriendlyMode()
+{
+    return s_friendlyMode.get();
+}
 
-bool useWindowsNames()          { return s_useWindowsNames.get(); }
-void setUseWindowsNames(bool on)     { s_useWindowsNames.set(on); }
+void setWindowsFriendlyMode(bool on)
+{
+    s_friendlyMode.set(on);
+}
+
+bool useWindowsNames()
+{
+    return s_useWindowsNames.get();
+}
+
+void setUseWindowsNames(bool on)
+{
+    s_useWindowsNames.set(on);
+}
 
 QString folderName(const QString &absolutePath)
 {
@@ -154,7 +167,9 @@ QString displayName(const QUrl &url, const QString &realName)
         return realName;
 
     const QString mapped = folderName(url.toLocalFile());
-    return mapped.isEmpty() ? realName : mapped;
+    if (mapped.isEmpty())
+        return realName;
+    return mapped;
 }
 
 } // namespace Branding

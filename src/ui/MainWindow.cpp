@@ -62,7 +62,6 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QMouseEvent>
-#include <QPair>
 #include <QProgressBar>
 #include <QPropertyAnimation>
 #include <QPushButton>
@@ -120,7 +119,9 @@ int MainWindow::openWindowCount()
 MainWindow *MainWindow::openWindow(const QUrl &folder, const QList<QUrl> &selection,
                                    const QString &startupId)
 {
-    const QUrl target = folder.isValid() ? folder : Locations::computer();
+    QUrl target = folder;
+    if (!target.isValid())
+        target = Locations::computer();
 
     // Two reveal requests for the same folder should end up as one window with
     // both files showing
@@ -151,7 +152,7 @@ MainWindow *MainWindow::openWindow(const QUrl &folder, const QList<QUrl> &select
     return window;
 }
 
-QPair<QString, QUrl> MainWindow::driveFor(const QString &path) const
+MainWindow::Crumb MainWindow::driveFor(const QString &path) const
 {
     KFilePlacesModel *places = m_places->placesModel();
     QString label;
@@ -170,9 +171,13 @@ QPair<QString, QUrl> MainWindow::driveFor(const QString &path) const
         if (!deviceUrl.isLocalFile())
             continue;
 
+        // Only a mount the path is on, so /media/a must not claim /media/ab
         const QString mount = QDir::cleanPath(deviceUrl.toLocalFile());
         const bool isRoot = (mount == QLatin1String("/"));
-        if (path != mount && !path.startsWith(isRoot ? mount : mount + QLatin1Char('/')))
+        QString mountPrefix = mount;
+        if (!isRoot)
+            mountPrefix += QLatin1Char('/');
+        if (path != mount && !path.startsWith(mountPrefix))
             continue;
 
         // The longest match wins, the nearer mount being the one it is on
@@ -193,9 +198,9 @@ QPair<QString, QUrl> MainWindow::driveFor(const QString &path) const
     return {label, mountUrl};
 }
 
-QList<QPair<QString, QUrl>> MainWindow::crumbsFor(const QUrl &url) const
+QList<MainWindow::Crumb> MainWindow::crumbsFor(const QUrl &url) const
 {
-    QList<QPair<QString, QUrl>> crumbs;
+    QList<Crumb> crumbs;
     crumbs.append({tr("Computer"), Locations::computer()});
 
     if (Locations::isComputer(url))
@@ -205,7 +210,9 @@ QList<QPair<QString, QUrl>> MainWindow::crumbsFor(const QUrl &url) const
     if (Locations::isSearch(url)) {
         const QUrl folder = Locations::searchFolder(url);
         crumbs = crumbsFor(folder);
-        const QString where = crumbs.isEmpty() ? QString() : crumbs.last().first;
+        QString where;
+        if (!crumbs.isEmpty())
+            where = crumbs.last().label;
         crumbs.append({tr("Search Results in %1").arg(where), url});
         return crumbs;
     }
@@ -239,17 +246,19 @@ QList<QPair<QString, QUrl>> MainWindow::crumbsFor(const QUrl &url) const
         QUrl local = url;
         local.setScheme(QStringLiteral("file"));
         crumbs = crumbsFor(local);
-        for (QPair<QString, QUrl> &crumb : crumbs) {
-            if (crumb.second.isLocalFile())
-                crumb.second.setScheme(QStringLiteral("admin"));
+        for (Crumb &crumb : crumbs) {
+            if (crumb.target.isLocalFile())
+                crumb.target.setScheme(QStringLiteral("admin"));
         }
         return crumbs;
     }
 
     if (!url.isLocalFile()) {
         // Remote and virtual locations hang straight off Computer
-        crumbs.append({url.scheme() == QLatin1String("trash")
-                           ? tr("Recycle Bin") : url.scheme(), url});
+        QString label = url.scheme();
+        if (url.scheme() == QLatin1String("trash"))
+            label = tr("Recycle Bin");
+        crumbs.append({label, url});
         return crumbs;
     }
 
@@ -257,20 +266,27 @@ QList<QPair<QString, QUrl>> MainWindow::crumbsFor(const QUrl &url) const
 
     // Computer, then a drive, then folders, and home is walked through like
     // any other path rather than collapsed to a root of its own
-    const QPair<QString, QUrl> drive = driveFor(path);
+    const Crumb drive = driveFor(path);
     crumbs.append(drive);
 
-    const QString mount = QDir::cleanPath(drive.second.toLocalFile());
+    // The rest of the path below the mount point, one folder at a time
+    const QString mount = QDir::cleanPath(drive.target.toLocalFile());
     const bool mountIsRoot = (mount == QLatin1String("/"));
-    QString walk = mountIsRoot ? QString() : mount;
-    const QStringList segments = path.mid(mountIsRoot ? 0 : mount.length())
-                                     .split(QLatin1Char('/'), Qt::SkipEmptyParts);
+    QString walk;
+    QString belowMount = path;
+    if (!mountIsRoot) {
+        walk = mount;
+        belowMount = path.mid(mount.length());
+    }
+
+    const QStringList segments = belowMount.split(QLatin1Char('/'), Qt::SkipEmptyParts);
     for (const QString &segment : segments) {
         walk += QLatin1Char('/') + segment;
         // The label may be rewritten for friendly naming, the target never
-        const QString mapped = Branding::folderName(walk);
-        crumbs.append({mapped.isEmpty() ? segment : mapped,
-                       QUrl::fromLocalFile(walk)});
+        QString label = Branding::folderName(walk);
+        if (label.isEmpty())
+            label = segment;
+        crumbs.append({label, QUrl::fromLocalFile(walk)});
     }
     return crumbs;
 }
@@ -447,7 +463,10 @@ MainWindow::MainWindow(const QUrl &startUrl, QWidget *parent)
             [this](bool available) { m_actUndo->setEnabled(available); });
     connect(undoManager, &KIO::FileUndoManager::undoTextChanged, this,
             [this](const QString &text) {
-        m_actUndo->setText(text.isEmpty() ? tr("Undo") : text);
+        if (text.isEmpty())
+            m_actUndo->setText(tr("Undo"));
+        else
+            m_actUndo->setText(text);
     });
 
     const QByteArray geometry = Settings::windowGeometry();
@@ -660,10 +679,12 @@ void MainWindow::buildActions()
     };
     int index = 0;
     for (const auto &[label, mode] : modes) {
+        // Ctrl+Shift+1 for the first mode, Ctrl+Shift+2 for the next, and so on
+        const Qt::Key digit = Qt::Key(Qt::Key_1 + index);
+
         auto *action = new QAction(tr(label), this);
         action->setCheckable(true);
-        action->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT
-                                         | Qt::Key(Qt::Key_1 + index)));
+        action->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | digit));
         action->setData(int(mode));
         connect(action, &QAction::triggered, this, [this, mode] { setViewMode(mode); });
         m_viewModeGroup->addAction(action);
@@ -926,7 +947,10 @@ void MainWindow::cyclePanes(bool forward)
     // Skips stops that cannot take the keyboard, so on the Computer page this
     // steps past the search box rather than appearing to do nothing
     for (int step = 1; step < StopCount; ++step) {
-        const int next = (current + (forward ? step : StopCount - step)) % StopCount;
+        // Going backwards by one is the same as going forwards by all but one,
+        // which keeps the result from going negative before the wrap around
+        const int offset = forward ? step : StopCount - step;
+        const int next = (current + offset) % StopCount;
         switch (next) {
         case NavigationPaneStop:
             m_places->setFocus(Qt::TabFocusReason);
@@ -977,12 +1001,17 @@ void MainWindow::buildNavigationBar()
     auto *recentMenu = new QMenu(navBtns);
     connect(recentMenu, &QMenu::aboutToShow, this, [this, recentMenu] {
         recentMenu->clear();
-        int shown = 0;
-        for (int i = m_history.size() - 1; i >= 0 && shown < kMaxRecentEntries; --i, ++shown) {
+
+        // Newest first, walking the history backwards
+        const int oldestShown = qMax(0, int(m_history.size()) - kMaxRecentEntries);
+        for (int i = m_history.size() - 1; i >= oldestShown; --i) {
             const QUrl url = m_history.at(i);
-            const QList<QPair<QString, QUrl>> crumbs = crumbsFor(url);
-            QAction *action = recentMenu->addAction(
-                locationIcon(url), crumbs.isEmpty() ? url.toString() : crumbs.last().first);
+            const QList<Crumb> crumbs = crumbsFor(url);
+            QString label = url.toString();
+            if (!crumbs.isEmpty())
+                label = crumbs.last().label;
+
+            QAction *action = recentMenu->addAction(locationIcon(url), label);
             action->setCheckable(true);
             action->setChecked(i == m_historyIndex);
             connect(action, &QAction::triggered, this, [this, i] {
@@ -1013,9 +1042,15 @@ void MainWindow::buildNavigationBar()
     m_pathBox->setFixedHeight(24);
     // Clicking the bar's empty space starts editing the path
     m_pathBox->setCursor(Qt::IBeamCursor);
-    m_pathLayout = new QHBoxLayout(m_pathBox);
+    auto *pathBoxLayout = new QHBoxLayout(m_pathBox);
+    pathBoxLayout->setContentsMargins(0, 2, 2, 2);
+    pathBoxLayout->setSpacing(0);
+
+    auto *crumbArea = new QWidget;
+    m_pathLayout = new QHBoxLayout(crumbArea);
     m_pathLayout->setContentsMargins(4, 0, 4, 0);
     m_pathLayout->setSpacing(4);
+    pathBoxLayout->addWidget(crumbArea, 1);
 
     // Inside the box rather than in the layout, positioned by hand and lowered
     // behind the crumbs, which have no background and read straight over it
@@ -1036,8 +1071,10 @@ void MainWindow::buildNavigationBar()
     m_pathProgressTimer->setInterval(kProgressTickInterval);
     connect(m_pathProgressTimer, &QTimer::timeout, this, [this] {
         const int value = m_pathProgress->value();
-        if (value < kProgressCeiling)
-            m_pathProgress->setValue(qMin(value + kProgressTickStep, kProgressCeiling));
+        if (value < kProgressCeiling) {
+            const int next = qMin(value + kProgressTickStep, kProgressCeiling);
+            m_pathProgress->setValue(next);
+        }
     });
 
     // One animation rather than one per finish, so a folder abandoned partway
@@ -1049,6 +1086,18 @@ void MainWindow::buildNavigationBar()
             this, &MainWindow::stopPathProgress);
 
     layout->addWidget(m_pathBox, 1);
+    auto *refreshButton = new QToolButton;
+    refreshButton->setIcon(Aero::themeIcon({"view-refresh", "reload"}));
+    refreshButton->setStyleSheet(
+        QStringLiteral("QToolButton { border: none;"
+                       " border-left: 1px solid rgba(121, 121, 121, 173);"
+                       " background: transparent; border-image: none; }"));
+    refreshButton->setToolTip(tr("Refresh (F5)"));
+    refreshButton->setFixedWidth(24);
+    refreshButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
+    refreshButton->setCursor(Qt::ArrowCursor);
+    pathBoxLayout->addWidget(refreshButton);
+    connect(refreshButton, &QToolButton::clicked, this, &MainWindow::refresh);
     layout->addSpacing(6);
 
     // The crumb bar is marked transparent by the inset call, so the theme gives
@@ -1068,9 +1117,9 @@ void MainWindow::buildNavigationBar()
     // Italic only while the placeholder shows
     connect(m_searchBox, &QLineEdit::textChanged, m_searchBox,
             [this](const QString &text) {
-        QFont f = m_searchBox->font();
-        f.setItalic(text.isEmpty());
-        m_searchBox->setFont(f);
+        QFont font = m_searchBox->font();
+        font.setItalic(text.isEmpty());
+        m_searchBox->setFont(font);
     });
     QFont searchFont = m_searchBox->font();
     searchFont.setItalic(true);
@@ -1151,9 +1200,9 @@ QIcon MainWindow::locationIcon(const QUrl &url) const
 void MainWindow::clearPathLayout()
 {
     while (QLayoutItem *item = m_pathLayout->takeAt(0)) {
-        if (QWidget *w = item->widget()) {
-            m_crumbArrows.remove(w);
-            w->deleteLater();
+        if (QWidget *widget = item->widget()) {
+            m_crumbArrows.remove(widget);
+            widget->deleteLater();
         }
         delete item;
     }
@@ -1173,9 +1222,10 @@ void MainWindow::beginPathEdit()
     // An elevated location edits as the plain path it is, and what the user
     // types goes back through the same worker below
     const bool elevated = url.scheme() == QLatin1String("admin");
-    m_pathEdit = new QLineEdit(url.isLocalFile() || elevated
-                                   ? displayPath(url)
-                                   : url.toString());
+    QString editText = url.toString();
+    if (url.isLocalFile() || elevated)
+        editText = displayPath(url);
+    m_pathEdit = new QLineEdit(editText);
     m_pathEdit->setFrame(false);
     Aero::setPointSize(m_pathEdit, 9);
     // Transparent, so the editor looks like the bar rather than sits inside it
@@ -1235,7 +1285,9 @@ void MainWindow::beginPathEdit()
 
         // Navigating rebuilds the trail and destroys the editor, so when it
         // declines to move the trail has to be put back by hand
-        if (target.isValid() && !target.matches(currentUrl(), QUrl::StripTrailingSlash))
+        const bool movesSomewhere = target.isValid()
+            && !target.matches(currentUrl(), QUrl::StripTrailingSlash);
+        if (movesSomewhere)
             navigateTo(target);
         else
             endPathEdit();
@@ -1259,9 +1311,9 @@ void MainWindow::setCrumbTrail(const QUrl &url)
     // Each arrow drops the children of the crumb to its left, so it is
     // registered against that crumb, and the first one lists the places instead
     const auto addArrow = [this](const QUrl &parent) {
+        const QColor arrowColor = Aero::Palette::rgb(Aero::Palette::CrumbArrow);
         auto *arrow = new Aero::LinkLabel;
-        arrow->setPixmap(Aero::arrowPixmap(Qt::RightArrow,
-                                           Aero::Palette::rgb(Aero::Palette::CrumbArrow), 6));
+        arrow->setPixmap(Aero::arrowPixmap(Qt::RightArrow, arrowColor, 6));
         m_crumbArrows.insert(arrow, parent);
         connect(arrow, &Aero::LinkLabel::clicked, this,
                 [this, arrow] { showCrumbMenu(arrow); });
@@ -1274,20 +1326,23 @@ void MainWindow::setCrumbTrail(const QUrl &url)
     addArrow(QUrl());
 
     // Intermediate segments are links and the last is plain text
-    const QList<QPair<QString, QUrl>> crumbs = crumbsFor(url);
+    const QList<Crumb> crumbs = crumbsFor(url);
     for (int i = 0; i < crumbs.size(); ++i) {
-        if (i > 0)
-            addArrow(crumbs.at(i - 1).second);
+        const Crumb &crumb = crumbs.at(i);
 
-        if (i == crumbs.size() - 1) {
-            m_pathLayout->addWidget(Aero::label(crumbs.at(i).first));
+        if (i > 0)
+            addArrow(crumbs.at(i - 1).target);
+
+        const bool isLast = (i == crumbs.size() - 1);
+        if (isLast) {
+            m_pathLayout->addWidget(Aero::label(crumb.label));
             continue;
         }
 
-        auto *link = new Aero::LinkLabel(crumbs.at(i).first);
+        auto *link = new Aero::LinkLabel(crumb.label);
         link->setColors(Aero::Palette::Text, Aero::Palette::CrumbHover);
         link->setUnderlineOnHover(true);
-        const QUrl target = crumbs.at(i).second;
+        const QUrl target = crumb.target;
         connect(link, &Aero::LinkLabel::clicked, this,
                 [this, target] { navigateTo(target); });
         m_pathLayout->addWidget(link);
@@ -1326,32 +1381,41 @@ void MainWindow::showCrumbMenu(QLabel *arrow)
                            [this, url] { navigateTo(url); });
         }
     } else if (parent.isLocalFile()) {
+        const bool showHidden = m_model->showHiddenFiles();
+        QDir::Filters filters = QDir::Dirs | QDir::NoDotAndDotDot;
+        if (showHidden)
+            filters |= QDir::Hidden;
+
         QDir dir(parent.toLocalFile());
-        dir.setFilter(QDir::Dirs | QDir::NoDotAndDotDot
-                      | (m_model->showHiddenFiles() ? QDir::Hidden : QDir::Filter(0)));
+        dir.setFilter(filters);
         dir.setSorting(QDir::Name | QDir::LocaleAware | QDir::IgnoreCase);
 
         const QIcon folderIcon = Aero::themeIcon({"folder"});
         const QFileInfoList entries = dir.entryInfoList();
         const QString here = QDir::cleanPath(currentUrl().toLocalFile());
-        int shown = 0;
+        int looked = 0;
         for (const QFileInfo &entry : entries) {
-            if (shown++ >= kMaxCrumbMenuEntries)
+            if (looked >= kMaxCrumbMenuEntries)
                 break;
-            if (Branding::isSystemFolder(entry.absoluteFilePath())
-                && !m_model->showHiddenFiles()) {
+            ++looked;
+
+            const QString path = entry.absoluteFilePath();
+            if (Branding::isSystemFolder(path) && !showHidden)
                 continue;
-            }
-            const QUrl url = QUrl::fromLocalFile(entry.absoluteFilePath());
-            QAction *action = menu.addAction(
-                folderIcon, Branding::displayName(url, entry.fileName()), this,
-                [this, url] { navigateTo(url); });
-            // A whole segment at a time, since a bare prefix would tick a
+
+            const QUrl url = QUrl::fromLocalFile(path);
+            const QString label = Branding::displayName(url, entry.fileName());
+            QAction *action = menu.addAction(folderIcon, label, this,
+                                             [this, url] { navigateTo(url); });
+
+            // Ticked when this is the folder on show or one of its ancestors,
+            // a whole segment at a time, since a bare prefix would tick a
             // folder whenever you were anywhere under a longer name
-            const QString candidate = QDir::cleanPath(entry.absoluteFilePath());
+            const QString candidate = QDir::cleanPath(path);
+            const bool onCurrentPath = here == candidate
+                || here.startsWith(candidate + QLatin1Char('/'));
             action->setCheckable(true);
-            action->setChecked(here == candidate
-                               || here.startsWith(candidate + QLatin1Char('/')));
+            action->setChecked(onCurrentPath);
         }
     }
 
@@ -1497,9 +1561,10 @@ void MainWindow::rebuildContextualCommands()
     const QList<KFileItem> selection = selectedItems();
     if (isTrashView()) {
         if (!selection.isEmpty()) {
-            addButton(selection.size() == 1 ? tr("Restore this item")
-                                            : tr("Restore the selected items"),
-                      nullptr, [this] { m_actRestore->trigger(); });
+            QString restoreText = tr("Restore the selected items");
+            if (selection.size() == 1)
+                restoreText = tr("Restore this item");
+            addButton(restoreText, nullptr, [this] { m_actRestore->trigger(); });
         } else if (m_model->rowCount() > 0) {
             addButton(tr("Restore all items"), nullptr,
                       [this] { m_actRestoreAll->trigger(); });
@@ -1619,10 +1684,11 @@ QWidget *MainWindow::buildNotificationBar()
 
     // The strip carries no policy, only reporting the click, and which dialog
     // that means is decided here
-    connect(m_notification, &KMessageWidget::linkActivated, this, [=](const QString &contents) {
-        if (contents == "admin-warning")
+    connect(m_notification, &KMessageWidget::linkActivated, this,
+            [this](const QString &link) {
+        if (link == QLatin1String("admin-warning"))
             AccessDialogs::showAdministratorWarning(this);
-        if (contents == "mount-dlg")
+        else if (link == QLatin1String("mount-dlg"))
             showMountDialog();
     });
     // Dismissing hides it for the rest of the session
@@ -1661,24 +1727,27 @@ void MainWindow::updateNotification()
 
     // The drives notice can be waved away, where the administrator one stays
     // for as long as it is true
-    m_notification->setText(
-        m_notice == Notice::Administrator
-            ? tr("You're navigating as an administrator, be careful. "
-                 "<a href=\"admin-warning\">Click for information...</a>")
-            : unmountedDrivesNotice(m_computerModel->unmountedCount())
-    );
-    m_notification->setCloseButtonVisible(m_notice != Notice::Administrator);
+    if (m_notice == Notice::Administrator) {
+        m_notification->setText(
+            tr("You're navigating as an administrator, be careful. "
+               "<a href=\"admin-warning\">Click for information...</a>"));
+        m_notification->setCloseButtonVisible(false);
+    } else {
+        m_notification->setText(unmountedDrivesNotice(m_computerModel->unmountedCount()));
+        m_notification->setCloseButtonVisible(true);
+    }
     m_notification->animatedShow();
 }
 
 // Windows counts the drives it found rather than saying some
 QString MainWindow::unmountedDrivesNotice(int hidden)
 {
-    return hidden == 1
-        ? tr("A drive is connected to your computer but is not mounted. "
-             "<a href=\"mount-dlg\">Click to change...</a>")
-        : tr("%1 drives are connected to your computer but are not mounted. "
-             "<a href=\"mount-dlg\">Click to change...</a>").arg(hidden);
+    if (hidden == 1) {
+        return tr("A drive is connected to your computer but is not mounted. "
+                  "<a href=\"mount-dlg\">Click to change...</a>");
+    }
+    return tr("%1 drives are connected to your computer but are not mounted. "
+              "<a href=\"mount-dlg\">Click to change...</a>").arg(hidden);
 }
 
 QWidget *MainWindow::buildBody()
@@ -1727,7 +1796,8 @@ QWidget *MainWindow::buildBody()
         for (QAction *action : m_groupGroup->actions())
             action->setChecked(action->data().toInt() == column);
     });
-    connect(&FileOps::GLOBAL_RENAME_CONTEXT, &FileOps::GlobalRenameContext::finishRename, this, [this](const QUrl &newUrl) {
+    connect(&FileOps::GLOBAL_RENAME_CONTEXT, &FileOps::GlobalRenameContext::finishRename,
+            this, [this](const QUrl &newUrl) {
         m_fileView->selectUrl(newUrl);
     });
 
@@ -1786,9 +1856,16 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
     // Every window installs this filter on the application, so without the
     // check on which is active the first one opened answers for all of them
     if (event->type() == QEvent::MouseButtonPress && isActiveWindow()) {
-        auto *me = static_cast<QMouseEvent *>(event);
-        if (me->button() == Qt::XButton1) { goBack();    return true; }
-        if (me->button() == Qt::XButton2) { goForward(); return true; }
+        auto *mouse = static_cast<QMouseEvent *>(event);
+        // The back and forward buttons on the side of a mouse
+        if (mouse->button() == Qt::XButton1) {
+            goBack();
+            return true;
+        }
+        if (mouse->button() == Qt::XButton2) {
+            goForward();
+            return true;
+        }
     }
 
     // Here rather than in the views, both answering it and neither owning what
@@ -1796,10 +1873,15 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
     if (event->type() == QEvent::Wheel && isActiveWindow()) {
         auto *wheel = static_cast<QWheelEvent *>(event);
         auto *widget = qobject_cast<QWidget *>(watched);
-        QWidget *zoomable = isComputerView() ? static_cast<QWidget *>(m_computerView)
-                                             : static_cast<QWidget *>(m_fileView);
-        if ((wheel->modifiers() & Qt::ControlModifier) && widget && zoomable
-            && (widget == zoomable || zoomable->isAncestorOf(widget))) {
+
+        QWidget *zoomable = m_fileView;
+        if (isComputerView())
+            zoomable = m_computerView;
+
+        const bool ctrlHeld = wheel->modifiers().testFlag(Qt::ControlModifier);
+        const bool overView = widget && zoomable
+            && (widget == zoomable || zoomable->isAncestorOf(widget));
+        if (ctrlHeld && overView) {
             zoomViewMode(wheel->angleDelta().y());
             return true;
         }
@@ -1808,11 +1890,11 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
     // Any other key pressed while it is held cancels this, so the combinations
     // are unaffected
     if (event->type() == QEvent::KeyPress) {
-        auto *ke = static_cast<QKeyEvent *>(event);
-        m_altAlone = (ke->key() == Qt::Key_Alt);
+        auto *key = static_cast<QKeyEvent *>(event);
+        m_altAlone = (key->key() == Qt::Key_Alt);
     } else if (event->type() == QEvent::KeyRelease) {
-        auto *ke = static_cast<QKeyEvent *>(event);
-        if (ke->key() == Qt::Key_Alt && m_altAlone && isActiveWindow()) {
+        auto *key = static_cast<QKeyEvent *>(event);
+        if (key->key() == Qt::Key_Alt && m_altAlone && isActiveWindow()) {
             m_altAlone = false;
             menuBar()->setVisible(!menuBar()->isVisible());
             return true;
@@ -1832,17 +1914,19 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
         layoutPathProgress();
 
     if (m_pathEdit && watched == m_pathEdit) {
-        if (event->type() == QEvent::KeyPress
-            && static_cast<QKeyEvent *>(event)->key() == Qt::Key_Escape) {
-            endPathEdit();
-            return true;
+        if (event->type() == QEvent::KeyPress) {
+            auto *key = static_cast<QKeyEvent *>(event);
+            if (key->key() == Qt::Key_Escape) {
+                endPathEdit();
+                return true;
+            }
         }
         // Clicking away cancels, since committing on focus loss would navigate
         // somewhere the user never pressed Enter on, and the completion popup
         // counts as a focus change too, hence checking the reason
         if (event->type() == QEvent::FocusOut) {
-            auto *fe = static_cast<QFocusEvent *>(event);
-            if (fe->reason() != Qt::PopupFocusReason) {
+            auto *focus = static_cast<QFocusEvent *>(event);
+            if (focus->reason() != Qt::PopupFocusReason) {
                 endPathEdit();
                 return true;
             }
@@ -1888,9 +1972,10 @@ void MainWindow::showLocation(const QUrl &url)
 
         // Win7 opens this page in tiles, so it falls back to its own mode
         // rather than the global default
-        m_computerView->setViewMode(Settings::hasViewModeFor(url)
-                                        ? Settings::viewModeFor(url)
-                                        : Settings::ViewMode::Tiles);
+        Settings::ViewMode mode = Settings::ViewMode::Tiles;
+        if (Settings::hasViewModeFor(url))
+            mode = Settings::viewModeFor(url);
+        m_computerView->setViewMode(mode);
     } else {
         m_stack->setCurrentWidget(m_listPage);
         m_model->setUrl(url);
@@ -2025,8 +2110,10 @@ void MainWindow::updateNavButtons()
 void MainWindow::updateWindowTitle()
 {
     // The last crumb, so the title agrees with the address bar
-    const QList<QPair<QString, QUrl>> crumbs = crumbsFor(currentUrl());
-    const QString label = crumbs.isEmpty() ? tr("Computer") : crumbs.last().first;
+    const QList<Crumb> crumbs = crumbsFor(currentUrl());
+    QString label = tr("Computer");
+    if (!crumbs.isEmpty())
+        label = crumbs.last().label;
     setWindowTitle(label);
     // Win7's search box names the folder it will search
     m_searchBox->setPlaceholderText(tr("Search %1").arg(label));
@@ -2057,8 +2144,12 @@ void MainWindow::startSearch()
 
 void MainWindow::openNewWindow(const QUrl &url)
 {
+    QUrl target = url;
+    if (!target.isValid())
+        target = Locations::computer();
+
     // The delete on close flag set in the constructor owns this
-    auto *window = new MainWindow(url.isValid() ? url : Locations::computer());
+    auto *window = new MainWindow(target);
     window->show();
 }
 
@@ -2087,8 +2178,7 @@ void MainWindow::showOptionsDialog()
     connect(&dialog, &OptionsDialog::applyViewToAllFolders, this, [this] {
         // This folder's view becomes the default, and clearing the remembered
         // ones is what extends it to folders that already had a preference
-        const Settings::ViewMode mode = isComputerView() ? m_computerView->viewMode()
-                                                         : m_fileView->viewMode();
+        const Settings::ViewMode mode = currentViewMode();
         Settings::clearRememberedViewModes();
         Settings::setDefaultViewMode(mode);
         Settings::setViewModeFor(currentUrl(), mode);
@@ -2155,20 +2245,22 @@ void MainWindow::setViewMode(Settings::ViewMode mode)
 
 void MainWindow::zoomViewMode(int angleDelta)
 {
+    // One notch of an ordinary mouse wheel, as Qt reports it
+    const int notch = 120;
+
     // Anything finer than a notch is carried over, so a touchpad still gets
     // there eventually
     m_zoomRemainder += angleDelta;
-    const int steps = m_zoomRemainder / 120;
+    const int steps = m_zoomRemainder / notch;
     if (steps == 0)
         return;
-    m_zoomRemainder -= steps * 120;
+    m_zoomRemainder -= steps * notch;
 
-    const Settings::ViewMode current = isComputerView() ? m_computerView->viewMode()
-                                                        : m_fileView->viewMode();
     // The modes run largest first, so scrolling up walks the list backwards
-    const int next = qBound(int(Settings::ViewMode::ExtraLargeIcons),
-                            int(current) - steps,
-                            int(Settings::ViewMode::Content));
+    const Settings::ViewMode current = currentViewMode();
+    const int first = int(Settings::ViewMode::ExtraLargeIcons);
+    const int last = int(Settings::ViewMode::Content);
+    const int next = qBound(first, int(current) - steps, last);
     if (next == int(current))
         return;
 
@@ -2195,9 +2287,9 @@ void MainWindow::updateListMessage()
     }
 
     // An empty search result says something different from an empty folder
-    if (Locations::isSearch(currentUrl()))
-        m_fileView->setStatusMessage(tr("No items match your search."));
-    else if (!m_searchBox->text().isEmpty())
+    const bool searching = Locations::isSearch(currentUrl())
+                        || !m_searchBox->text().isEmpty();
+    if (searching)
         m_fileView->setStatusMessage(tr("No items match your search."));
     else
         m_fileView->setStatusMessage(tr("This folder is empty."));
@@ -2256,9 +2348,9 @@ void MainWindow::updateFreeSpace()
         if (job->error() || folder != m_freeSpaceUrl)
             return;   // navigated away while the job was running
 
-        m_freeSpace = tr("%1 free of %2")
-                          .arg(KIO::convertSize(job->availableSize()),
-                               KIO::convertSize(job->size()));
+        const QString available = KIO::convertSize(job->availableSize());
+        const QString total = KIO::convertSize(job->size());
+        m_freeSpace = tr("%1 free of %2").arg(available, total);
         // A selection made in the meantime owns the pane now
         if (selectedItems().isEmpty() && !isComputerView())
             m_details->showFolderSummary(m_model->rowCount(), m_freeSpace);
@@ -2325,9 +2417,8 @@ void MainWindow::updateActionStates()
     m_actUp->setEnabled(!computer);
     m_actUndo->setEnabled(FileOps::isUndoAvailable());
 
-    m_actExtract->setEnabled(
-        (one && Archives::isBrowsable(selection.first()))
-        || Archives::isInsideArchive(currentUrl()));
+    const bool archiveSelected = one && Archives::isBrowsable(selection.first());
+    m_actExtract->setEnabled(archiveSelected || Archives::isInsideArchive(currentUrl()));
 
     // Only where the user cannot already write, or elevation becomes something
     // people click by reflex, and the admin worker is local only
@@ -2337,8 +2428,7 @@ void MainWindow::updateActionStates()
 
     // The modes apply to the drives page too, but not the ordering, this menu
     // being over the file list's columns while drives sort from their own
-    const Settings::ViewMode mode = computer ? m_computerView->viewMode()
-                                             : m_fileView->viewMode();
+    const Settings::ViewMode mode = currentViewMode();
     for (QAction *action : m_viewModeGroup->actions()) {
         action->setEnabled(true);
         action->setChecked(action->data().toInt() == int(mode));
@@ -2420,11 +2510,12 @@ void MainWindow::extractSelection()
         return;
 
     // Windows suggests a folder beside the archive, named after it
-    const QString name = archiveFile.fileName();
-    const int dot = name.lastIndexOf(QLatin1Char('.'));
-    const QString folder = dot > 0 ? name.left(dot) : name;
-    const QString suggested =
-        KIO::upUrl(archiveFile).toLocalFile() + QLatin1Char('/') + folder;
+    QString folder = archiveFile.fileName();
+    const int dot = folder.lastIndexOf(QLatin1Char('.'));
+    if (dot > 0)
+        folder.truncate(dot);   // drop the extension
+    const QString besideArchive = KIO::upUrl(archiveFile).toLocalFile();
+    const QString suggested = besideArchive + QLatin1Char('/') + folder;
 
     bool ok = false;
     const QString destination = QInputDialog::getText(
@@ -2541,8 +2632,10 @@ void MainWindow::buildItemContextMenu(QMenu &menu,
     menu.addAction(m_actOpen);
     if (m_actOpenNewWindow->isEnabled() && !isTrashView())
         menu.addAction(m_actOpenNewWindow);
-    if (std::any_of(selection.cbegin(), selection.cend(),
-                    [](const KFileItem &item) { return !item.isDir(); })) {
+
+    const bool anyFiles = std::any_of(selection.cbegin(), selection.cend(),
+                                      [](const KFileItem &item) { return !item.isDir(); });
+    if (anyFiles) {
         // Also where installed service menus come from
         m_itemActions->setItemListProperties(
             KFileItemListProperties(KFileItemList(selection)));
@@ -2820,7 +2913,9 @@ void MainWindow::renameSelection()
     // A rename over several files opens one editor and applies what it commits
     // to all of them, and they are remembered now since opening the editor
     // moves the current index
-    m_batchRename = selection.size() > 1 ? selection : QList<KFileItem>();
+    m_batchRename.clear();
+    if (selection.size() > 1)
+        m_batchRename = selection;
 
     // The editor reports the new name rather than writing to the model, so the
     // rename goes through KIO and lands in the undo history
@@ -2839,9 +2934,11 @@ void MainWindow::applyRename(const QUrl &url, const QString &newName)
         return item.url() == url;
     });
 
-    bool renamed = (batch.size() > 1 && sameBatch)
-    ? FileOps::renameBatch(batch, newName, this)
-    : FileOps::rename(url, newName, this);
+    bool renamed = false;
+    if (batch.size() > 1 && sameBatch)
+        renamed = FileOps::renameBatch(batch, newName, this);
+    else
+        renamed = FileOps::rename(url, newName, this);
 
     if (!renamed)
         m_fileView->selectUrl(url);
@@ -2863,9 +2960,9 @@ QList<KFileItem> MainWindow::selectedItems() const
 
     // The drives page has devices for rows, and its indices bear no relation to
     // the directory model's
-    m_selection = (!m_fileView || isComputerView())
-        ? QList<KFileItem>()
-        : m_model->itemsForIndexes(m_fileView->selectedIndexes());
+    m_selection.clear();
+    if (m_fileView && !isComputerView())
+        m_selection = m_model->itemsForIndexes(m_fileView->selectedIndexes());
     m_selectionValid = true;
     return m_selection;
 }
@@ -2888,5 +2985,14 @@ QList<QUrl> MainWindow::selectedUrls() const
 
 QUrl MainWindow::currentUrl() const
 {
-    return m_historyIndex >= 0 ? m_history.at(m_historyIndex) : QUrl();
+    if (m_historyIndex < 0)
+        return {};
+    return m_history.at(m_historyIndex);
+}
+
+Settings::ViewMode MainWindow::currentViewMode() const
+{
+    if (isComputerView())
+        return m_computerView->viewMode();
+    return m_fileView->viewMode();
 }

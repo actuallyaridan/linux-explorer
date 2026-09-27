@@ -35,20 +35,28 @@ static QString withoutScrollBarRules(QString qss)
     int pos = 0;
     while (pos < qss.size()) {
         const int open = qss.indexOf(QLatin1Char('{'), pos);
-        const int close = open < 0 ? -1 : qss.indexOf(QLatin1Char('}'), open);
+        int close = -1;
+        if (open >= 0)
+            close = qss.indexOf(QLatin1Char('}'), open);
+
+        // No complete block left, so the rest is copied as it is
         if (close < 0) {
             out += QStringView(qss).mid(pos);
             break;
         }
 
+        const QString selectorList = qss.mid(pos, open - pos);
+        const QString body = qss.mid(open, close - open + 1);
+
         QStringList kept;
-        const QStringList selectors = qss.mid(pos, open - pos).split(QLatin1Char(','));
-        for (const QString &sel : selectors) {
-            if (!sel.contains(QLatin1String("QScrollBar")))
-                kept << sel;
+        const QStringList selectors = selectorList.split(QLatin1Char(','));
+        for (const QString &selector : selectors) {
+            if (!selector.contains(QLatin1String("QScrollBar")))
+                kept << selector;
         }
         if (!kept.isEmpty())
-            out += kept.join(QLatin1Char(',')) + qss.mid(open, close - open + 1);
+            out += kept.join(QLatin1Char(',')) + body;
+
         pos = close + 1;
     }
     return out;
@@ -59,7 +67,9 @@ static QString withoutScrollBarRules(QString qss)
 // during delivery would reenter the style engine
 class ScrollBarUnstyler : public QObject {
 public:
-    explicit ScrollBarUnstyler(QApplication *app) : QObject(app), m_app(app)
+    explicit ScrollBarUnstyler(QApplication *app)
+        : QObject(app)
+        , m_app(app)
     {
         strip();
         app->installEventFilter(this);
@@ -67,8 +77,11 @@ public:
 
     bool eventFilter(QObject *watched, QEvent *event) override
     {
-        if (event->type() == QEvent::StyleChange && !m_pending
-            && m_app->styleSheet().contains(QLatin1String("QScrollBar"))) {
+        const bool styleChanged = event->type() == QEvent::StyleChange;
+        const bool hasScrollBarRules =
+            m_app->styleSheet().contains(QLatin1String("QScrollBar"));
+
+        if (styleChanged && !m_pending && hasScrollBarRules) {
             m_pending = true;
             QTimer::singleShot(0, this, [this]() {
                 m_pending = false;

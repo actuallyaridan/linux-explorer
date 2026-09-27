@@ -3,8 +3,10 @@
 #include <QDialog>
 
 class QCheckBox;
+class QLayout;
 class QPushButton;
 class QRadioButton;
+class QTabWidget;
 class QTreeWidget;
 class QTreeWidgetItem;
 
@@ -31,6 +33,9 @@ private:
     QWidget *buildViewTab();
     QWidget *buildSearchTab();
 
+    // The button in the bottom right of every tab
+    QLayout *buildRestoreDefaultsRow();
+
     // Restoring defaults writes them in first and then calls this
     void load();
 
@@ -49,7 +54,7 @@ private:
                       const QString &onText, QTreeWidgetItem **offItem,
                       QTreeWidgetItem **onItem);
 
-    class QTabWidget *m_tabs = nullptr;
+    QTabWidget *m_tabs = nullptr;
 
     // General
     QRadioButton *m_sameWindow = nullptr;

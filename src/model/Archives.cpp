@@ -77,8 +77,10 @@ QUrl urlFor(const KFileItem &item)
 bool isInsideArchive(const QUrl &url)
 {
     const QString scheme = url.scheme();
-    return scheme == QLatin1String("zip") || scheme == QLatin1String("tar")
-        || scheme == QLatin1String("ar") || scheme == QLatin1String("sevenz");
+    return scheme == QLatin1String("zip")
+        || scheme == QLatin1String("tar")
+        || scheme == QLatin1String("ar")
+        || scheme == QLatin1String("sevenz");
 }
 
 QUrl archiveFileFor(const QUrl &url)

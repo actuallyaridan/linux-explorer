@@ -5,9 +5,13 @@
 
 class KJob;
 class QLabel;
-class QPushButton;
-namespace Aero { class ChevronButton; class LinkLabel; }
 class QProgressBar;
+class QPushButton;
+
+namespace Aero {
+class ChevronButton;
+class LinkLabel;
+}
 
 // Win7's file operation dialog, with a details panel that folds out
 //

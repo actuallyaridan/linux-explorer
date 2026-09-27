@@ -65,17 +65,23 @@ QUrl MapDriveDialog::urlFor(const QString &input, const QString &scheme,
     if (segments.isEmpty())
         return {};
 
+    const QString host = segments.first();
+    const QStringList pathSegments = segments.mid(1);
+    const QString userName = user.trimmed();
+
     QUrl url;
     url.setScheme(actualScheme);
-    url.setHost(segments.first());
-    if (segments.size() > 1)
-        url.setPath(QLatin1Char('/') + segments.mid(1).join(QLatin1Char('/')));
-    if (!user.trimmed().isEmpty())
-        url.setUserName(user.trimmed());
+    url.setHost(host);
+    if (!pathSegments.isEmpty())
+        url.setPath(QLatin1Char('/') + pathSegments.join(QLatin1Char('/')));
+    if (!userName.isEmpty())
+        url.setUserName(userName);
 
     // Never a password in the location, which would land in the bookmark file
     // in plain text, and KIO asks when the share demands one
-    return url.isValid() && !url.host().isEmpty() ? url : QUrl();
+    if (!url.isValid() || url.host().isEmpty())
+        return {};
+    return url;
 }
 
 MapDriveDialog::MapDriveDialog(KFilePlacesModel *places, QWidget *parent)
@@ -114,12 +120,10 @@ MapDriveDialog::MapDriveDialog(KFilePlacesModel *places, QWidget *parent)
     m_user = new QLineEdit;
     m_user->setPlaceholderText(tr("Optional"));
 
-    for (QWidget *w : {static_cast<QWidget *>(m_scheme),
-                       static_cast<QWidget *>(m_folder),
-                       static_cast<QWidget *>(m_label),
-                       static_cast<QWidget *>(m_user)}) {
-        Aero::setPointSize(w, 9);
-    }
+    Aero::setPointSize(m_scheme, 9);
+    Aero::setPointSize(m_folder, 9);
+    Aero::setPointSize(m_label, 9);
+    Aero::setPointSize(m_user, 9);
 
     const auto row = [this, form](const QString &text, QWidget *field) {
         QLabel *caption = Aero::label(text, 9);
@@ -167,9 +171,11 @@ void MapDriveDialog::updateOkState()
     const QUrl url = urlFor(m_folder->text(), m_scheme->currentData().toString(),
                             m_user->text());
     m_ok->setEnabled(url.isValid());
-    m_preview->setText(url.isValid()
-                           ? tr("Will open: %1").arg(url.toDisplayString())
-                           : QString());
+
+    if (url.isValid())
+        m_preview->setText(tr("Will open: %1").arg(url.toDisplayString()));
+    else
+        m_preview->clear();
 }
 
 void MapDriveDialog::accepted()
@@ -182,9 +188,9 @@ void MapDriveDialog::accepted()
     m_mapped = url;
 
     if (m_reconnect->isChecked() && m_places) {
-        const QString name = m_label->text().trimmed().isEmpty()
-            ? url.host() + url.path()
-            : m_label->text().trimmed();
+        QString name = m_label->text().trimmed();
+        if (name.isEmpty())
+            name = url.host() + url.path();
         // The desktop's shared bookmarks, so the share also turns up in the
         // file dialogs and elsewhere, filed under network
         m_places->addPlace(name, url, QStringLiteral("folder-network"));

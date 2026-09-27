@@ -40,7 +40,9 @@ static QString formatFsType(const QString &fsType)
 
     // An empty or otherwise unrecognised type is what Explorer calls RAW: a
     // partition with no filesystem the OS can make sense of
-    return fsType.isEmpty() ? QObject::tr("RAW") : fsType.toUpper();
+    if (fsType.isEmpty())
+        return QObject::tr("RAW");
+    return fsType.toUpper();
 }
 
 QString deviceNode(const KFilePlacesModel *places, const QModelIndex &index)
@@ -70,10 +72,9 @@ QString forPlace(const KFilePlacesModel *places, const QModelIndex &index)
 
     // The places model falls back to the node for an unlabelled volume, so a
     // label that already is or carries the node is left alone
-    if (label == node
-        || label.contains(QLatin1Char('(') + node + QLatin1Char(')'))) {
+    const QString bracketedNode = QLatin1Char('(') + node + QLatin1Char(')');
+    if (label == node || label.contains(bracketedNode))
         return label;
-    }
 
     return QStringLiteral("%1 (%2)").arg(label, node);
 }

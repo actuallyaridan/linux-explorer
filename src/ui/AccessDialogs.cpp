@@ -40,13 +40,16 @@ bool isPermissionError(int error)
 void showFailure(QWidget *parent, const QString &title, const QString &primary,
                  const QString &secondary)
 {
-    Aero::TaskDialog dialog(parent, title,
-                      Aero::themeIcon({"dialog-error", "messagebox_critical",
-                                 "emblem-error"}));
+    const QIcon errorIcon =
+        Aero::themeIcon({"dialog-error", "messagebox_critical", "emblem-error"});
+    Aero::TaskDialog dialog(parent, title, errorIcon);
+
+    QString reason = secondary;
+    if (reason.isEmpty())
+        reason = translate("Access is denied.");
+
     dialog.addLine(Aero::bodyLabel(primary));
-    dialog.addLine(Aero::bodyLabel(secondary.isEmpty()
-                                       ? translate("Access is denied.")
-                                       : secondary));
+    dialog.addLine(Aero::bodyLabel(reason));
 
     QPushButton *ok = dialog.addButton(translate("OK"));
     ok->setDefault(true);
@@ -67,8 +70,8 @@ void showLocationUnavailable(QWidget *parent, const QString &path,
 bool askForAdminAccess(QWidget *parent, const QString &folderName)
 {
     // The folder's own name is the title, as in Windows
-    Aero::TaskDialog dialog(parent, folderName,
-                      Aero::themeIcon({"dialog-warning", "messagebox_warning"}));
+    const QIcon warningIcon = Aero::themeIcon({"dialog-warning", "messagebox_warning"});
+    Aero::TaskDialog dialog(parent, folderName, warningIcon);
 
     // Win7's main instruction, bigger and in its own blue
     QLabel *primary = Aero::label(
@@ -94,8 +97,8 @@ bool askForAdminAccess(QWidget *parent, const QString &folderName)
 
 void showAdministratorWarning(QWidget *parent)
 {
-    Aero::TaskDialog dialog(parent, translate("Administrator"),
-                      Aero::themeIcon({"dialog-warning", "messagebox_warning"}));
+    const QIcon warningIcon = Aero::themeIcon({"dialog-warning", "messagebox_warning"});
+    Aero::TaskDialog dialog(parent, translate("Administrator"), warningIcon);
     dialog.addLine(Aero::bodyLabel(translate(
         "You are using File Explorer as an administrator. You can perform "
         "actions that are normally restricted, which means that you have the "

@@ -43,7 +43,9 @@ bool anythingWantsAutomount(KConfig &config)
     const QStringList udis = devices.groupList();
     for (const QString &udi : udis) {
         const KConfigGroup device = devices.group(udi);
-        if (device.readEntry(kForceOnAttach, false) || device.readEntry(kForceOnLogin, false))
+        const bool forced = device.readEntry(kForceOnAttach, false)
+                         || device.readEntry(kForceOnLogin, false);
+        if (forced)
             return true;
     }
     return false;
@@ -57,16 +59,19 @@ void setKdedModuleLoaded(bool loaded)
     const QString module = QStringLiteral("device_automounter");
 
     auto call = [&dbus](const QString &method, const QVariantList &args) {
-        QDBusMessage msg = QDBusMessage::createMethodCall(QStringLiteral("org.kde.kded6"),
-                                                          QStringLiteral("/kded"),
-                                                          QStringLiteral("org.kde.kded6"),
-                                                          method);
-        msg.setArguments(args);
-        dbus.call(msg, QDBus::NoBlock);
+        QDBusMessage message = QDBusMessage::createMethodCall(QStringLiteral("org.kde.kded6"),
+                                                              QStringLiteral("/kded"),
+                                                              QStringLiteral("org.kde.kded6"),
+                                                              method);
+        message.setArguments(args);
+        dbus.call(message, QDBus::NoBlock);
     };
 
     call(QStringLiteral("setModuleAutoloading"), {module, loaded});
-    call(loaded ? QStringLiteral("loadModule") : QStringLiteral("unloadModule"), {module});
+    if (loaded)
+        call(QStringLiteral("loadModule"), {module});
+    else
+        call(QStringLiteral("unloadModule"), {module});
 }
 
 } // namespace

@@ -54,25 +54,38 @@ constexpr int kContentHeight = 50;
 int defaultColumnWidth(int sourceColumn)
 {
     switch (sourceColumn) {
-    case DirectoryModel::Name:         return 260;
-    case DirectoryModel::ModifiedTime: return 140;
-    case DirectoryModel::Type:         return 130;
-    case DirectoryModel::Size:         return 90;
-    default:                           return 110;
+    case DirectoryModel::Name:
+        return 260;
+    case DirectoryModel::ModifiedTime:
+        return 140;
+    case DirectoryModel::Type:
+        return 130;
+    case DirectoryModel::Size:
+        return 90;
+    default:
+        return 110;
     }
 }
 
 QString columnTitle(int sourceColumn)
 {
     switch (sourceColumn) {
-    case DirectoryModel::Name:         return QObject::tr("Name");
-    case DirectoryModel::Size:         return QObject::tr("Size");
-    case DirectoryModel::ModifiedTime: return QObject::tr("Date modified");
-    case DirectoryModel::Permissions:  return QObject::tr("Permissions");
-    case DirectoryModel::Owner:        return QObject::tr("Owner");
-    case DirectoryModel::Group:        return QObject::tr("Group");
-    case DirectoryModel::Type:         return QObject::tr("Type");
-    default:                           return {};
+    case DirectoryModel::Name:
+        return QObject::tr("Name");
+    case DirectoryModel::Size:
+        return QObject::tr("Size");
+    case DirectoryModel::ModifiedTime:
+        return QObject::tr("Date modified");
+    case DirectoryModel::Permissions:
+        return QObject::tr("Permissions");
+    case DirectoryModel::Owner:
+        return QObject::tr("Owner");
+    case DirectoryModel::Group:
+        return QObject::tr("Group");
+    case DirectoryModel::Type:
+        return QObject::tr("Type");
+    default:
+        return {};
     }
 }
 
@@ -103,6 +116,69 @@ QModelIndex mapToFlat(const QModelIndex &index, const QAbstractItemModel *flat)
         walk = proxy->mapToSource(walk);
     }
     return walk;
+}
+
+// What a tile or content row draws beside an item's icon
+struct ItemText {
+    QString name;
+    QString type;
+    // Empty for folders
+    QString size;
+    QColor primary;
+    QColor secondary;
+};
+
+// Up to three lines, centred as a block against the icon beside them
+void paintTileText(QPainter *painter, const QRect &area, const QFontMetrics &metrics,
+                   const ItemText &item)
+{
+    QStringList lines{item.name};
+    if (!item.type.isEmpty())
+        lines << item.type;
+    if (!item.size.isEmpty())
+        lines << item.size;
+
+    const int lineHeight = metrics.height();
+    int y = area.top() + (area.height() - lineHeight * lines.size()) / 2;
+
+    for (int i = 0; i < lines.size(); ++i) {
+        // Only the name, on the first line, gets the stronger colour
+        painter->setPen(i == 0 ? item.primary : item.secondary);
+
+        const QRect lineRect(area.left(), y, area.width(), lineHeight);
+        const QString text = metrics.elidedText(lines.at(i), Qt::ElideRight, area.width());
+        painter->drawText(lineRect, Qt::AlignLeft | Qt::AlignVCenter, text);
+        y += lineHeight;
+    }
+}
+
+// The name over the type on the left, and the size at the far edge
+void paintContentText(QPainter *painter, const QRect &area, const QFontMetrics &metrics,
+                      const ItemText &item)
+{
+    const int lineHeight = metrics.height();
+    const int top = area.top() + (area.height() - lineHeight * 2) / 2;
+
+    int sizeWidth = 0;
+    if (!item.size.isEmpty())
+        sizeWidth = metrics.horizontalAdvance(item.size) + 12;
+    const int leftWidth = qMax(20, area.width() - sizeWidth);
+
+    const QRect nameRect(area.left(), top, leftWidth, lineHeight);
+    const QRect typeRect(area.left(), top + lineHeight, leftWidth, lineHeight);
+
+    painter->setPen(item.primary);
+    painter->drawText(nameRect, Qt::AlignLeft | Qt::AlignVCenter,
+                      metrics.elidedText(item.name, Qt::ElideRight, leftWidth));
+
+    painter->setPen(item.secondary);
+    painter->drawText(typeRect, Qt::AlignLeft | Qt::AlignVCenter,
+                      metrics.elidedText(item.type, Qt::ElideRight, leftWidth));
+
+    if (!item.size.isEmpty()) {
+        const QRect sizeRect(area.left() + leftWidth, top, sizeWidth, lineHeight);
+        painter->drawText(sizeRect, Qt::AlignRight | Qt::AlignVCenter, item.size);
+    }
 }
 
 // The two layouts the base delegate has no notion of, plus the inline rename
@@ -153,10 +229,13 @@ public:
                    const QModelIndex &index) const override
     {
         switch (m_layout) {
-        case Tile:    return QSize(kTileWidth, kTileHeight);
-        case Content: return QSize(qMax(m_rowWidth, 120), kContentHeight);
+        case Tile:
+            return QSize(kTileWidth, kTileHeight);
+        case Content:
+            return QSize(qMax(m_rowWidth, 120), kContentHeight);
         case Standard:
-        default:      return QStyledItemDelegate::sizeHint(option, index);
+        default:
+            return QStyledItemDelegate::sizeHint(option, index);
         }
     }
 
@@ -172,9 +251,11 @@ public:
         // The box follows the selection rather than a state of its own
         QStyleOptionButton box;
         box.rect = checkRect(option.rect);
-        box.state = QStyle::State_Enabled
-            | ((option.state & QStyle::State_Selected) ? QStyle::State_On
-                                                       : QStyle::State_Off);
+        box.state = QStyle::State_Enabled;
+        if (option.state & QStyle::State_Selected)
+            box.state |= QStyle::State_On;
+        else
+            box.state |= QStyle::State_Off;
         QStyle *style = option.widget ? option.widget->style() : QApplication::style();
         style->drawPrimitive(QStyle::PE_IndicatorCheckBox, &box, painter,
                              option.widget);
@@ -209,11 +290,6 @@ public:
         const int reserved = paintCheckBox(painter, option, index);
 
         const bool selected = opt.state & QStyle::State_Selected;
-        const QColor primary = selected ? opt.palette.color(QPalette::HighlightedText)
-                                        : Aero::Palette::rgb(Aero::Palette::Text);
-        const QColor secondary = selected ? opt.palette.color(QPalette::HighlightedText)
-                                          : Aero::Palette::rgb(Aero::Palette::MutedText);
-
         const int iconSize = (m_layout == Tile) ? 48 : 32;
         const QRect body = option.rect.adjusted(4 + reserved, 3, -6, -3);
 
@@ -221,58 +297,19 @@ public:
         const QRect iconRect(body.left(),
                              body.top() + (body.height() - iconSize) / 2,
                              iconSize, iconSize);
-        icon.paint(painter, iconRect, Qt::AlignCenter,
-                   selected ? QIcon::Selected : QIcon::Normal);
+        const QIcon::Mode iconMode = selected ? QIcon::Selected : QIcon::Normal;
+        icon.paint(painter, iconRect, Qt::AlignCenter, iconMode);
 
-        const KFileItem item = itemFor(index);
-        const QString name = index.data(Qt::DisplayRole).toString();
-        const QString type = item.isNull() ? QString() : item.mimeComment();
-        const QString size = (item.isNull() || item.isDir())
-            ? QString() : KIO::convertSize(item.size());
+        const QRect textArea = body.adjusted(iconSize + 8, 0, 0, 0);
+        const ItemText text = itemText(index, selected, opt.palette);
 
-        QRect text = body.adjusted(iconSize + 8, 0, 0, 0);
-        const QFontMetrics fm(opt.font);
         painter->save();
         painter->setFont(opt.font);
-
-        if (m_layout == Tile) {
-            // Three lines, centred as a block against the icon beside them
-            QStringList lines{name};
-            if (!type.isEmpty())
-                lines << type;
-            if (!size.isEmpty())
-                lines << size;
-
-            const int lineHeight = fm.height();
-            int y = text.top() + (text.height() - lineHeight * lines.size()) / 2;
-            for (int i = 0; i < lines.size(); ++i) {
-                painter->setPen(i == 0 ? primary : secondary);
-                painter->drawText(QRect(text.left(), y, text.width(), lineHeight),
-                                  Qt::AlignLeft | Qt::AlignVCenter,
-                                  fm.elidedText(lines.at(i), Qt::ElideRight, text.width()));
-                y += lineHeight;
-            }
-        } else {
-            // Name and type on the left, size at the far edge
-            const int lineHeight = fm.height();
-            const int top = text.top() + (text.height() - lineHeight * 2) / 2;
-            const int sizeWidth = size.isEmpty() ? 0 : fm.horizontalAdvance(size) + 12;
-            const int leftWidth = qMax(20, text.width() - sizeWidth);
-
-            painter->setPen(primary);
-            painter->drawText(QRect(text.left(), top, leftWidth, lineHeight),
-                              Qt::AlignLeft | Qt::AlignVCenter,
-                              fm.elidedText(name, Qt::ElideRight, leftWidth));
-            painter->setPen(secondary);
-            painter->drawText(QRect(text.left(), top + lineHeight, leftWidth, lineHeight),
-                              Qt::AlignLeft | Qt::AlignVCenter,
-                              fm.elidedText(type, Qt::ElideRight, leftWidth));
-            if (!size.isEmpty()) {
-                painter->drawText(QRect(text.left() + leftWidth, top,
-                                        sizeWidth, lineHeight),
-                                  Qt::AlignRight | Qt::AlignVCenter, size);
-            }
-        }
+        const QFontMetrics metrics(opt.font);
+        if (m_layout == Tile)
+            paintTileText(painter, textArea, metrics, text);
+        else
+            paintContentText(painter, textArea, metrics, text);
         painter->restore();
     }
 
@@ -287,14 +324,18 @@ public:
         // The real name on disk, since committing a friendly label or an
         // elided extension would rename the file to a caption
         const KFileItem item = itemFor(index);
-        const QString name = item.isNull() ? index.data(Qt::DisplayRole).toString()
-                                           : item.name();
+        QString name;
+        if (item.isNull())
+            name = index.data(Qt::DisplayRole).toString();
+        else
+            name = item.name();
         line->setText(name);
 
         // Windows preselects the base name, leaving the extension alone
         const int dot = name.lastIndexOf(QLatin1Char('.'));
         const bool hasExtension = dot > 0 && !item.isNull() && !item.isDir();
-        line->setSelection(0, hasExtension ? dot : name.length());
+        const int baseNameLength = hasExtension ? dot : name.length();
+        line->setSelection(0, baseNameLength);
     }
 
     void setModelData(QWidget *editor, QAbstractItemModel *,
@@ -311,6 +352,28 @@ private:
     KFileItem itemFor(const QModelIndex &index) const
     {
         return m_model->itemForIndex(mapToFlat(index, m_model->model()));
+    }
+
+    ItemText itemText(const QModelIndex &index, bool selected,
+                      const QPalette &palette) const
+    {
+        const KFileItem item = itemFor(index);
+
+        ItemText text;
+        text.name = index.data(Qt::DisplayRole).toString();
+        if (!item.isNull())
+            text.type = item.mimeComment();
+        if (!item.isNull() && !item.isDir())
+            text.size = KIO::convertSize(item.size());
+
+        if (selected) {
+            text.primary = palette.color(QPalette::HighlightedText);
+            text.secondary = palette.color(QPalette::HighlightedText);
+        } else {
+            text.primary = Aero::Palette::rgb(Aero::Palette::Text);
+            text.secondary = Aero::Palette::rgb(Aero::Palette::MutedText);
+        }
+        return text;
     }
 
     DirectoryModel *m_model = nullptr;
@@ -468,18 +531,35 @@ using IconList = DropTarget<QListView>;
 void FileView::onRenameDelegate(const QModelIndex &index, const QString &name)
 {
     const KFileItem item = itemAtViewIndex(index);
-    if (!item.isNull() && !name.isEmpty() && name != item.name()) {
-        if (m_renameState == FileView::RenameState::LOCKED) {
-            m_renameState = FileView::RenameState::RENAMING;
+    const bool nameChanged = !item.isNull() && !name.isEmpty() && name != item.name();
+
+    if (nameChanged) {
+        if (m_renameState == RenameState::Locked) {
+            m_renameState = RenameState::Renaming;
             Q_EMIT renameRequested(item.url(), name);
         }
         // FIXME: A workaround for closing the rename prompt without crashing.
-    } else if (m_renameState != FileView::RenameState::NORMAL) {
-        m_renameState = FileView::RenameState::NORMAL;
-        auto view = currentView();
+        return;
+    }
+
+    if (m_renameState != RenameState::Normal) {
+        m_renameState = RenameState::Normal;
+        QAbstractItemView *view = currentView();
         Q_EMIT view->itemDelegate()->closeEditor(view->indexWidget(index));
-    } else
-        selectUrl(item.url());
+        return;
+    }
+
+    selectUrl(item.url());
+}
+
+QUrl FileView::dropDestinationAt(QAbstractItemView *view, const QPoint &pos) const
+{
+    // A folder under the cursor takes the drop, and anywhere else it goes into
+    // the folder on show
+    const KFileItem item = itemAtViewIndex(view->indexAt(pos));
+    if (!item.isNull() && item.isDir())
+        return item.url();
+    return m_destination;
 }
 
 FileView::FileView(DirectoryModel *model, QWidget *parent)
@@ -539,10 +619,8 @@ void FileView::buildDetailsView()
     Aero::configureListTree(m_details);
 
     tree->onDrop = [this](QDropEvent *event) {
-        const KFileItem item =
-            itemAtViewIndex(m_details->indexAt(event->position().toPoint()));
-        Q_EMIT dropped(event, (!item.isNull() && item.isDir()) ? item.url()
-                                                               : m_destination);
+        const QUrl destination = dropDestinationAt(m_details, event->position().toPoint());
+        Q_EMIT dropped(event, destination);
     };
 
     // Only folders spring open, a drag resting on a file heading for the
@@ -607,10 +685,8 @@ void FileView::buildIconView()
     Aero::setPointSize(m_icons, 9);
 
     list->onDrop = [this](QDropEvent *event) {
-        const KFileItem item =
-            itemAtViewIndex(m_icons->indexAt(event->position().toPoint()));
-        Q_EMIT dropped(event, (!item.isNull() && item.isDir()) ? item.url()
-                                                               : m_destination);
+        const QUrl destination = dropDestinationAt(m_icons, event->position().toPoint());
+        Q_EMIT dropped(event, destination);
     };
 
     // Only folders spring open, a drag resting on a file heading for the
@@ -684,16 +760,18 @@ void FileView::showHeaderMenu(const QPoint &pos)
         connect(action, &QAction::toggled, this, [this, source](bool on) {
             // Adding or removing a column renumbers everything after it, so
             // the sort is restated in source terms and applied again
-            const int sortSource = m_model->sortColumn();
+            int sortColumn = m_model->sortColumn();
+            if (sortColumn < 0)
+                sortColumn = DirectoryModel::Name;
             const Qt::SortOrder order = m_model->sortOrder();
 
             m_model->setColumnVisible(source, on);
 
-            const int restored = m_model->viewColumnFor(
-                sortSource >= 0 ? sortSource : DirectoryModel::Name);
-            m_details->header()->setSortIndicator(
-                restored >= 0 ? restored : 0, order);
-            m_model->sort(sortSource >= 0 ? sortSource : DirectoryModel::Name, order);
+            int indicatorColumn = m_model->viewColumnFor(sortColumn);
+            if (indicatorColumn < 0)
+                indicatorColumn = 0;
+            m_details->header()->setSortIndicator(indicatorColumn, order);
+            m_model->sort(sortColumn, order);
             configureColumns();
         });
     }
@@ -724,8 +802,8 @@ void FileView::rebindSelection()
     if (!grouped())
         m_icons->setSelectionModel(m_details->selectionModel());
 
-    for (QAbstractItemView *view : {static_cast<QAbstractItemView *>(m_details),
-                                    static_cast<QAbstractItemView *>(m_icons)}) {
+    const QList<QAbstractItemView *> views = {m_details, m_icons};
+    for (QAbstractItemView *view : views) {
         if (QItemSelectionModel *selection = view->selectionModel()) {
             // Setting a model hands the view a fresh selection model but
             // leaves the old one's connections in place
@@ -805,8 +883,8 @@ void FileView::applyMode()
     m_iconPreviews->setPreviewShown(!details);
 
     if (details) {
-        static_cast<ItemDelegate *>(m_details->itemDelegate())
-            ->setCheckBoxes(m_checkBoxes, true);
+        auto *delegate = static_cast<ItemDelegate *>(m_details->itemDelegate());
+        delegate->setCheckBoxes(m_checkBoxes, true);
         m_stack->setCurrentWidget(m_details);
         m_details->setIconSize(QSize(iconSize, iconSize));
         repositionMessage();
@@ -819,9 +897,9 @@ void FileView::applyMode()
     auto *delegate = static_cast<ItemDelegate *>(m_icons->itemDelegate());
 
     // Full width rows put the box at the left, the grid modes in the corner
-    delegate->setCheckBoxes(m_checkBoxes,
-                            m_mode == Settings::ViewMode::List
-                                || m_mode == Settings::ViewMode::Content);
+    const bool rowBased = m_mode == Settings::ViewMode::List
+                       || m_mode == Settings::ViewMode::Content;
+    delegate->setCheckBoxes(m_checkBoxes, rowBased);
 
     switch (m_mode) {
     case Settings::ViewMode::List:
@@ -876,9 +954,9 @@ void FileView::applyMode()
 
 QAbstractItemView *FileView::currentView() const
 {
-    return m_mode == Settings::ViewMode::Details
-        ? static_cast<QAbstractItemView *>(m_details)
-        : static_cast<QAbstractItemView *>(m_icons);
+    if (m_mode == Settings::ViewMode::Details)
+        return m_details;
+    return m_icons;
 }
 
 void FileView::focusView()
@@ -915,19 +993,21 @@ void FileView::bindActivation(QAbstractItemView *view)
         action->setShortcutContext(Qt::WidgetWithChildrenShortcut);
         connect(action, &QAction::triggered, this, [this, view, activate] {
             const QModelIndex current = view->currentIndex();
-            if (current.isValid()) {
-                switch (m_renameState) {
-                    case FileView::RenameState::RENAMING:
-                        break;
-                    case FileView::RenameState::LOCKED: {
-                        QWidget* editor = view->indexWidget(current);
-                        Q_EMIT view->itemDelegate()->commitData(editor);
-                        break;
-                    }
-                    default:
-                        activate(current);
-                        break;
-                }
+            if (!current.isValid())
+                return;
+
+            switch (m_renameState) {
+            case RenameState::Normal:
+                activate(current);
+                break;
+            case RenameState::Locked: {
+                // Enter inside the rename editor commits the new name
+                QWidget *editor = view->indexWidget(current);
+                Q_EMIT view->itemDelegate()->commitData(editor);
+                break;
+            }
+            case RenameState::Renaming:
+                break;
             }
         });
         view->addAction(action);
@@ -986,13 +1066,14 @@ bool FileView::eventFilter(QObject *watched, QEvent *event)
         return QWidget::eventFilter(watched, event);
 
     // A tick toggles that row alone, which is what the box is for
-    const bool selected = view->selectionModel()->isSelected(index);
-    view->selectionModel()->select(
-        index, (selected ? QItemSelectionModel::Deselect : QItemSelectionModel::Select)
-                   | QItemSelectionModel::Rows);
+    QItemSelectionModel::SelectionFlags flags = QItemSelectionModel::Rows;
+    if (view->selectionModel()->isSelected(index))
+        flags |= QItemSelectionModel::Deselect;
+    else
+        flags |= QItemSelectionModel::Select;
+    view->selectionModel()->select(index, flags);
     return true;
 }
-
 
 QItemSelectionModel *FileView::selectionModel() const
 {
@@ -1040,7 +1121,7 @@ void FileView::renameItem(const QUrl &url)
     if (!index.isValid())
         return;
 
-    m_renameState = FileView::RenameState::LOCKED;
+    m_renameState = RenameState::Locked;
     QAbstractItemView *view = currentView();
     // Editing is off by default, so a stray double click cannot start a rename
     view->setEditTriggers(QAbstractItemView::AllEditTriggers);
@@ -1056,14 +1137,13 @@ bool FileView::selectUrl(const QUrl &url, bool startRename)
         return false;
 
     QAbstractItemView *view = currentView();
-    if (m_renameState != FileView::RenameState::NORMAL) {
-        Q_ASSERT((!startRename));
-        m_renameState = FileView::RenameState::NORMAL;
+    if (m_renameState != RenameState::Normal) {
+        Q_ASSERT(!startRename);
+        m_renameState = RenameState::Normal;
     }
     view->setCurrentIndex(index);
-    view->selectionModel()->select(index,
-                                   QItemSelectionModel::ClearAndSelect
-                                       | QItemSelectionModel::Rows);
+    view->selectionModel()->select(index, QItemSelectionModel::ClearAndSelect
+                                              | QItemSelectionModel::Rows);
     view->scrollTo(index, QAbstractItemView::EnsureVisible);
     if (startRename)
         renameItem(url);
@@ -1135,15 +1215,18 @@ void FileView::invertSelection()
     if (view == m_details && grouped()) {
         // The files live under the headings, so each group is its own range
         for (int group = 0; group < rows; ++group) {
-            const QModelIndex parent = model->index(group, 0);
-            const int children = model->rowCount(parent);
-            if (children > 0) {
-                everything.select(model->index(0, 0, parent),
-                                  model->index(children - 1, columns - 1, parent));
-            }
+            const QModelIndex heading = model->index(group, 0);
+            const int files = model->rowCount(heading);
+            if (files == 0)
+                continue;
+            const QModelIndex first = model->index(0, 0, heading);
+            const QModelIndex last = model->index(files - 1, columns - 1, heading);
+            everything.select(first, last);
         }
     } else {
-        everything.select(model->index(0, 0), model->index(rows - 1, columns - 1));
+        const QModelIndex first = model->index(0, 0);
+        const QModelIndex last = model->index(rows - 1, columns - 1);
+        everything.select(first, last);
     }
 
     selection->select(everything, QItemSelectionModel::Toggle);

@@ -117,7 +117,9 @@ QString GroupingProxy::groupTitleFor(int sourceRow, int *rank) const
             *rank = -1;
             return tr("File folder");
         }
-        return item.mimeComment().isEmpty() ? tr("Unspecified") : item.mimeComment();
+        if (item.mimeComment().isEmpty())
+            return tr("Unspecified");
+        return item.mimeComment();
 
     case DirectoryModel::Size: {
         if (item.isDir()) {
@@ -125,13 +127,14 @@ QString GroupingProxy::groupTitleFor(int sourceRow, int *rank) const
             return tr("File folder");
         }
         const KIO::filesize_t size = item.size();
-        for (int i = 0; i < int(std::size(kSizeBuckets)); ++i) {
+        const int bucketCount = int(std::size(kSizeBuckets));
+        for (int i = 0; i < bucketCount; ++i) {
             if (size <= kSizeBuckets[i].limit) {
                 *rank = i;
                 return tr(kSizeBuckets[i].title);
             }
         }
-        *rank = int(std::size(kSizeBuckets));
+        *rank = bucketCount;
         return tr("Gigantic (> 128 MB)");
     }
 
@@ -144,14 +147,33 @@ QString GroupingProxy::groupTitleFor(int sourceRow, int *rank) const
         const QDate today = QDate::currentDate();
         const QDate date = when.date();
         const qint64 days = date.daysTo(today);
+        const bool thisYear = date.year() == today.year();
+        const bool thisMonth = thisYear && date.month() == today.month();
 
-        if (days <= 0)                        { *rank = 0; return tr("Today"); }
-        if (days == 1)                        { *rank = 1; return tr("Yesterday"); }
-        if (days < 7)                         { *rank = 2; return tr("Earlier this week"); }
-        if (days < 14)                        { *rank = 3; return tr("Last week"); }
-        if (date.year() == today.year()
-            && date.month() == today.month()) { *rank = 4; return tr("Earlier this month"); }
-        if (date.year() == today.year())      { *rank = 5; return tr("Earlier this year"); }
+        if (days <= 0) {
+            *rank = 0;
+            return tr("Today");
+        }
+        if (days == 1) {
+            *rank = 1;
+            return tr("Yesterday");
+        }
+        if (days < 7) {
+            *rank = 2;
+            return tr("Earlier this week");
+        }
+        if (days < 14) {
+            *rank = 3;
+            return tr("Last week");
+        }
+        if (thisMonth) {
+            *rank = 4;
+            return tr("Earlier this month");
+        }
+        if (thisYear) {
+            *rank = 5;
+            return tr("Earlier this year");
+        }
         *rank = 6;
         return tr("A long time ago");
     }
@@ -179,7 +201,7 @@ QString GroupingProxy::groupTitleFor(int sourceRow, int *rank) const
 void GroupingProxy::rebuild()
 {
     QList<Group> groups;
-    QHash<int, QPair<int, int>> lookup;
+    QHash<int, RowPosition> lookup;
     computeGroups(&groups, &lookup);
 
     // Nothing moved, so no reset, which is what keeps a selection alive while a
@@ -194,7 +216,7 @@ void GroupingProxy::rebuild()
 }
 
 void GroupingProxy::computeGroups(QList<Group> *outGroups,
-                                  QHash<int, QPair<int, int>> *outLookup) const
+                                  QHash<int, RowPosition> *outLookup) const
 {
     outGroups->clear();
     outLookup->clear();
@@ -240,10 +262,12 @@ void GroupingProxy::computeGroups(QList<Group> *outGroups,
     for (int i : order)
         outGroups->append(groups.at(i));
 
-    for (int g = 0; g < outGroups->size(); ++g) {
-        const Group &group = outGroups->at(g);
-        for (int p = 0; p < group.rows.size(); ++p)
-            outLookup->insert(group.rows.at(p), {g, p});
+    for (int groupIndex = 0; groupIndex < outGroups->size(); ++groupIndex) {
+        const Group &group = outGroups->at(groupIndex);
+        for (int indexInGroup = 0; indexInGroup < group.rows.size(); ++indexInGroup) {
+            const int sourceRow = group.rows.at(indexInGroup);
+            outLookup->insert(sourceRow, RowPosition{groupIndex, indexInGroup});
+        }
     }
 }
 
@@ -283,7 +307,9 @@ int GroupingProxy::rowCount(const QModelIndex &parent) const
 
 int GroupingProxy::columnCount(const QModelIndex &) const
 {
-    return sourceModel() ? sourceModel()->columnCount() : 0;
+    if (!sourceModel())
+        return 0;
+    return sourceModel()->columnCount();
 }
 
 bool GroupingProxy::isGroup(const QModelIndex &proxyIndex) const
@@ -316,8 +342,10 @@ QModelIndex GroupingProxy::mapFromSource(const QModelIndex &sourceIndex) const
     const auto found = m_rowLookup.constFind(sourceIndex.row());
     if (found == m_rowLookup.constEnd())
         return {};
-    return createIndex(found.value().second, sourceIndex.column(),
-                       quintptr(found.value().first + 1));
+
+    const RowPosition position = found.value();
+    return createIndex(position.indexInGroup, sourceIndex.column(),
+                       quintptr(position.group + 1));
 }
 
 QVariant GroupingProxy::data(const QModelIndex &index, int role) const
@@ -332,9 +360,9 @@ QVariant GroupingProxy::data(const QModelIndex &index, int role) const
 
         switch (role) {
         case Qt::DisplayRole:
-            return index.column() == 0
-                ? QStringLiteral("%1 (%2)").arg(group.title).arg(group.rows.size())
-                : QVariant();
+            if (index.column() != 0)
+                return {};
+            return QStringLiteral("%1 (%2)").arg(group.title).arg(group.rows.size());
         case Qt::FontRole: {
             QFont font;
             font.setBold(true);
@@ -351,8 +379,9 @@ QVariant GroupingProxy::data(const QModelIndex &index, int role) const
 QVariant GroupingProxy::headerData(int section, Qt::Orientation orientation,
                                    int role) const
 {
-    return sourceModel() ? sourceModel()->headerData(section, orientation, role)
-                         : QVariant();
+    if (!sourceModel())
+        return {};
+    return sourceModel()->headerData(section, orientation, role);
 }
 
 Qt::ItemFlags GroupingProxy::flags(const QModelIndex &index) const

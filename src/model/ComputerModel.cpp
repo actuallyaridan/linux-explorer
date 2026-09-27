@@ -51,7 +51,10 @@ void ComputerModel::rebuild()
         device.url = m_places->url(index);
         device.placeRow = row;
         device.removable = (group == KFilePlacesModel::RemovableDevicesType);
-        device.type = device.removable ? tr("Removable Disk") : tr("Local Disk");
+        if (device.removable)
+            device.type = tr("Removable Disk");
+        else
+            device.type = tr("Local Disk");
         device.fsType = DriveLabel::fileSystemType(m_places, index);
 
         // Any data change rebuilds the whole list, so starting each size from
@@ -110,11 +113,20 @@ void ComputerModel::setSortKey(SortKey key, Qt::SortOrder order)
 void ComputerModel::sort(int column, Qt::SortOrder order)
 {
     switch (column) {
-    case Name:      setSortKey(SortByName, order); break;
-    case Type:      setSortKey(SortByType, order); break;
-    case TotalSize: setSortKey(SortBySize, order); break;
-    case FreeSpace: setSortKey(SortByFree, order); break;
-    default:        break;
+    case Name:
+        setSortKey(SortByName, order);
+        break;
+    case Type:
+        setSortKey(SortByType, order);
+        break;
+    case TotalSize:
+        setSortKey(SortBySize, order);
+        break;
+    case FreeSpace:
+        setSortKey(SortByFree, order);
+        break;
+    default:
+        break;
     }
 }
 
@@ -131,18 +143,19 @@ void ComputerModel::applySort(QList<Device> &devices) const
                 return left.sizeKnown;
         }
 
-        int cmp = 0;
+        // Negative when left comes first, positive when right does
+        int comparison = 0;
         switch (m_sortKey) {
         case SortBySize:
             if (left.sizeKnown && left.total != right.total)
-                cmp = left.total < right.total ? -1 : 1;
+                comparison = left.total < right.total ? -1 : 1;
             break;
         case SortByFree:
             if (left.sizeKnown && left.available != right.available)
-                cmp = left.available < right.available ? -1 : 1;
+                comparison = left.available < right.available ? -1 : 1;
             break;
         case SortByType:
-            cmp = QString::compare(left.type, right.type, Qt::CaseInsensitive);
+            comparison = QString::compare(left.type, right.type, Qt::CaseInsensitive);
             break;
         case SortByName:
         default:
@@ -150,9 +163,12 @@ void ComputerModel::applySort(QList<Device> &devices) const
         }
 
         // Name breaks every tie, rather than discovery order
-        if (cmp == 0)
-            cmp = QString::compare(left.name, right.name, Qt::CaseInsensitive);
-        return descending ? cmp > 0 : cmp < 0;
+        if (comparison == 0)
+            comparison = QString::compare(left.name, right.name, Qt::CaseInsensitive);
+
+        if (descending)
+            return comparison > 0;
+        return comparison < 0;
     });
 }
 
@@ -208,12 +224,17 @@ void ComputerModel::queryFreeSpace(const QUrl &url)
 
 int ComputerModel::rowCount(const QModelIndex &parent) const
 {
-    return parent.isValid() ? 0 : m_devices.size();
+    // A flat table, so nothing has children
+    if (parent.isValid())
+        return 0;
+    return m_devices.size();
 }
 
 int ComputerModel::columnCount(const QModelIndex &parent) const
 {
-    return parent.isValid() ? 0 : ColumnCount;
+    if (parent.isValid())
+        return 0;
+    return ColumnCount;
 }
 
 QVariant ComputerModel::data(const QModelIndex &index, int role) const
@@ -225,7 +246,9 @@ QVariant ComputerModel::data(const QModelIndex &index, int role) const
 
     switch (role) {
     case Qt::DecorationRole:
-        return index.column() == Name ? device.icon : QVariant();
+        if (index.column() != Name)
+            return {};
+        return device.icon;
     case UrlRole:
         return device.url;
     case TotalSizeRole:
@@ -251,9 +274,13 @@ QVariant ComputerModel::data(const QModelIndex &index, int role) const
     case Type:
         return device.type;
     case TotalSize:
-        return device.sizeKnown ? KIO::convertSize(device.total) : QString();
+        if (!device.sizeKnown)
+            return QString();
+        return KIO::convertSize(device.total);
     case FreeSpace:
-        return device.sizeKnown ? KIO::convertSize(device.available) : QString();
+        if (!device.sizeKnown)
+            return QString();
+        return KIO::convertSize(device.available);
     default:
         return {};
     }
@@ -265,11 +292,16 @@ QVariant ComputerModel::headerData(int section, Qt::Orientation orientation, int
         return QAbstractTableModel::headerData(section, orientation, role);
 
     switch (section) {
-    case Name:      return tr("Name");
-    case Type:      return tr("Type");
-    case TotalSize: return tr("Total Size");
-    case FreeSpace: return tr("Free Space");
-    default:        return {};
+    case Name:
+        return tr("Name");
+    case Type:
+        return tr("Type");
+    case TotalSize:
+        return tr("Total Size");
+    case FreeSpace:
+        return tr("Free Space");
+    default:
+        return {};
     }
 }
 

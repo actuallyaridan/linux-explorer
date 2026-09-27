@@ -77,26 +77,26 @@ FileProgressDialog::FileProgressDialog(KJob *job, const QString &source,
     headerLayout->addWidget(m_heading, 1, Qt::AlignVCenter);
     contentLayout()->addWidget(header);
 
+    // The white body below the band
     auto *body = new QWidget;
     auto *bodyLayout = new QVBoxLayout(body);
     bodyLayout->setContentsMargins(16, 12, 16, 14);
     bodyLayout->setSpacing(10);
     contentLayout()->addWidget(body, 1);
-    QVBoxLayout *contentLayout = bodyLayout;   // the white body below the band
 
     m_summary = Aero::label(QString(), 9);
     m_summary->setTextFormat(Qt::RichText);
-    contentLayout->addWidget(m_summary);
+    bodyLayout->addWidget(m_summary);
 
     m_details = buildDetails();
     m_details->hide();
-    contentLayout->addWidget(m_details);
+    bodyLayout->addWidget(m_details);
 
     m_bar = new QProgressBar;
     m_bar->setRange(0, 100);
     m_bar->setTextVisible(false);
     m_bar->setFixedHeight(kBarHeight);
-    contentLayout->addWidget(m_bar);
+    bodyLayout->addWidget(m_bar);
 
     m_chevron = new Aero::ChevronButton;
     addFooterWidget(m_chevron);
@@ -118,11 +118,22 @@ FileProgressDialog::FileProgressDialog(KJob *job, const QString &source,
     connect(m_pause, &QPushButton::clicked, this, [this] {
         if (!m_job)
             return;
-        if (!(m_job->isSuspended() ? m_job->resume() : m_job->suspend())) {
+
+        bool supported = false;
+        if (m_job->isSuspended())
+            supported = m_job->resume();
+        else
+            supported = m_job->suspend();
+
+        if (!supported) {
             m_pause->setEnabled(false);
             return;
         }
-        m_pause->setText(m_job->isSuspended() ? tr("Resume") : tr("Pause"));
+
+        if (m_job->isSuspended())
+            m_pause->setText(tr("Resume"));
+        else
+            m_pause->setText(tr("Pause"));
         refreshHeading();
     });
 
@@ -142,7 +153,9 @@ FileProgressDialog::FileProgressDialog(KJob *job, const QString &source,
         m_action = title;
         // These name the file in flight, so they feed the details panel rather
         // than the header, and a copy reports nothing else that would
-        const QString current = field1.second.isEmpty() ? field2.second : field1.second;
+        QString current = field1.second;
+        if (current.isEmpty())
+            current = field2.second;
         if (!current.isEmpty())
             m_currentItem = current.section(QLatin1Char('/'), -1);
         refreshHeading();
@@ -223,8 +236,12 @@ QWidget *FileProgressDialog::buildDetails()
     grid->setHorizontalSpacing(10);
     grid->setVerticalSpacing(3);
 
-    const auto addRow = [&](int row, const QString &caption, QLabel **valueOut) {
-        grid->addWidget(Aero::label(caption, 9, Aero::Palette::MutedText), row, 0, Qt::AlignTop);
+    // A grey caption on the left and an empty value label on the right, which
+    // is handed back through valueOut to be filled in later
+    const auto addRow = [grid](int row, const QString &caption, QLabel **valueOut) {
+        QLabel *captionLabel = Aero::label(caption, 9, Aero::Palette::MutedText);
+        grid->addWidget(captionLabel, row, 0, Qt::AlignTop);
+
         *valueOut = Aero::label(QString(), 9);
         grid->addWidget(*valueOut, row, 1);
     };
@@ -245,7 +262,10 @@ void FileProgressDialog::setExpanded(bool expanded)
     m_details->setVisible(expanded);
     // Win7 shows one or the other, the summary or the grid, never both
     m_summary->setVisible(!expanded);
-    m_expander->setText(expanded ? tr("Fewer details") : tr("More details"));
+    if (expanded)
+        m_expander->setText(tr("Fewer details"));
+    else
+        m_expander->setText(tr("More details"));
     QSignalBlocker blocker(m_chevron);
     m_chevron->setChecked(expanded);
     // Fixed width, but the height must follow the panel or the dialog keeps its
@@ -255,18 +275,27 @@ void FileProgressDialog::setExpanded(bool expanded)
 
 void FileProgressDialog::refreshHeading()
 {
-    const QString action = m_action.isEmpty() ? tr("Copying") : m_action;
+    QString action = m_action;
+    if (action.isEmpty())
+        action = tr("Copying");
 
+    // How much is being worked on, such as "3 items (12 MB)"
     QString what;
     if (m_totalItems > 0) {
-        what = m_totalItems == 1 ? tr("1 item") : tr("%1 items").arg(m_totalItems);
+        if (m_totalItems == 1)
+            what = tr("1 item");
+        else
+            what = tr("%1 items").arg(m_totalItems);
+
         if (m_totalBytes > 0)
             what = tr("%1 (%2)").arg(what, KIO::convertSize(m_totalBytes));
     } else if (m_totalBytes > 0) {
         what = KIO::convertSize(m_totalBytes);
     }
 
-    QString heading = what.isEmpty() ? action : QStringLiteral("%1 %2").arg(action, what);
+    QString heading = action;
+    if (!what.isEmpty())
+        heading = QStringLiteral("%1 %2").arg(action, what);
     if (m_job && m_job->isSuspended())
         heading = tr("%1 (Paused)").arg(heading);
 
@@ -285,17 +314,17 @@ QString FileProgressDialog::remainingText() const
     if (m_speed == 0 || m_totalBytes <= m_processedBytes)
         return {};
 
-    const qulonglong left = m_totalBytes - m_processedBytes;
-    const qulonglong seconds = left / m_speed;
+    const qulonglong bytesLeft = m_totalBytes - m_processedBytes;
+    const qulonglong seconds = bytesLeft / m_speed;
 
     if (seconds < 60)
         return tr("About %1 Seconds").arg(seconds);
 
     const qulonglong minutes = seconds / 60;
-    const qulonglong rest = seconds % 60;
-    if (rest == 0)
+    const qulonglong extraSeconds = seconds % 60;
+    if (extraSeconds == 0)
         return tr("About %1 Minutes").arg(minutes);
-    return tr("About %1 Minutes and %2 Seconds").arg(minutes).arg(rest);
+    return tr("About %1 Minutes and %2 Seconds").arg(minutes).arg(extraSeconds);
 }
 
 void FileProgressDialog::refreshDetails()
@@ -305,25 +334,36 @@ void FileProgressDialog::refreshDetails()
     m_detailTo->setText(elidePath(m_destination));
     m_detailRemainingTime->setText(remainingText());
 
+    const bool bytesLeft = m_totalBytes > m_processedBytes;
+
+    qulonglong itemsLeft = 0;
+    if (m_totalItems > m_processedItems)
+        itemsLeft = m_totalItems - m_processedItems;
+
     // KIO counts a file as processed the moment it starts, where Win7 counts
     // the file in flight as remaining
-    qulonglong left = m_totalItems > m_processedItems ? m_totalItems - m_processedItems : 0;
-    if (left == 0 && m_totalItems > 0 && m_totalBytes > m_processedBytes)
-        left = 1;
+    if (itemsLeft == 0 && m_totalItems > 0 && bytesLeft)
+        itemsLeft = 1;
 
-    if (left > 0) {
-        const QString items = left == 1 ? tr("1 item") : tr("%1 items").arg(left);
-        m_detailRemainingItems->setText(
-            m_totalBytes > m_processedBytes
-                ? tr("%1 (%2)").arg(items,
-                                    KIO::convertSize(m_totalBytes - m_processedBytes))
-                : items);
+    if (itemsLeft > 0) {
+        QString remaining;
+        if (itemsLeft == 1)
+            remaining = tr("1 item");
+        else
+            remaining = tr("%1 items").arg(itemsLeft);
+
+        if (bytesLeft) {
+            const QString size = KIO::convertSize(m_totalBytes - m_processedBytes);
+            remaining = tr("%1 (%2)").arg(remaining, size);
+        }
+        m_detailRemainingItems->setText(remaining);
     } else {
-        m_detailRemainingItems->setText(QString());
+        m_detailRemainingItems->clear();
     }
 
-    m_detailSpeed->setText(m_speed > 0
-                               ? tr("%1/second").arg(KIO::convertSize(m_speed))
-                               : QString());
+    if (m_speed > 0)
+        m_detailSpeed->setText(tr("%1/second").arg(KIO::convertSize(m_speed)));
+    else
+        m_detailSpeed->clear();
 }
 

@@ -41,8 +41,9 @@ void configureListTree(QTreeView *tree)
                        "}").arg(QLatin1String(Palette::Surface)));
     // Pinned rather than left to the size hint, which is cached before the app
     // wide stylesheet polishes the widget and comes out twice as tall
-    const QFontMetrics fm(tree->header()->font());
-    tree->header()->setFixedHeight(fm.height() + 2 * 4 + 1);
+    const QFontMetrics metrics(tree->header()->font());
+    const int padding = 4;
+    tree->header()->setFixedHeight(metrics.height() + 2 * padding + 1);
 }
 
 } // namespace Aero

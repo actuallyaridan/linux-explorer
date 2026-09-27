@@ -77,8 +77,12 @@ void TaskDialog::setContentMargins(const QMargins &margins)
 void TaskDialog::addLine(QLabel *line)
 {
     line->setWordWrap(true);
+
     // Without an icon there is no stack, so fall back to the plain column
-    (m_lines ? m_lines : m_content)->addWidget(line);
+    if (m_lines)
+        m_lines->addWidget(line);
+    else
+        m_content->addWidget(line);
 }
 
 QPushButton *TaskDialog::addButton(const QString &text)
@@ -93,7 +97,8 @@ QPushButton *TaskDialog::addButton(const QString &text)
 
 void TaskDialog::addFooterWidget(QWidget *w)
 {
-    m_footer->insertWidget(m_footerLeft++, w);
+    m_footer->insertWidget(m_footerLeft, w);
+    ++m_footerLeft;
 }
 
 void TaskDialog::lockSize(int width)

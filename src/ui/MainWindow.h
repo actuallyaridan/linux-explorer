@@ -5,7 +5,6 @@
 #include <QHash>
 #include <QList>
 #include <QMainWindow>
-#include <QPair>
 #include <QPointer>
 #include <QSoundEffect>
 #include <QUrl>
@@ -91,12 +90,18 @@ private:
     void updateNotification();
     void setupShortcuts();
 
-    // The segments from Computer down to the folder, each with its target
-    QList<QPair<QString, QUrl>> crumbsFor(const QUrl &url) const;
+    // One segment of the address bar's trail, such as "Computer" or a folder
+    struct Crumb {
+        QString label;
+        QUrl target;
+    };
 
-    // The label and mount point, resolved from the places model so the trail
-    // names drives as Computer and the sidebar do
-    QPair<QString, QUrl> driveFor(const QString &path) const;
+    // The segments from Computer down to the folder
+    QList<Crumb> crumbsFor(const QUrl &url) const;
+
+    // The drive's label and mount point, resolved from the places model so the
+    // trail names drives as Computer and the sidebar do
+    Crumb driveFor(const QString &path) const;
 
     void setCrumbTrail(const QUrl &url);
     void clearPathLayout();
@@ -237,6 +242,9 @@ private:
 
     QList<QUrl> selectedUrls() const;
     QUrl currentUrl() const;
+
+    // Of whichever page is on show, the drives or the file list
+    Settings::ViewMode currentViewMode() const;
 
     // The current location, or the folder a search was started from
     QUrl operationFolder() const;

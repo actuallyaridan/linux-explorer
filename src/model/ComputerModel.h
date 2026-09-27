@@ -19,7 +19,13 @@ class ComputerModel : public QAbstractTableModel {
     Q_OBJECT
 
 public:
-    enum Column { Name = 0, Type, TotalSize, FreeSpace, ColumnCount };
+    enum Column {
+        Name = 0,
+        Type,
+        TotalSize,
+        FreeSpace,
+        ColumnCount,
+    };
 
     // The tile view needs the raw numbers rather than the formatted strings
     enum Role {
@@ -32,7 +38,12 @@ public:
     };
 
     // Type is here for the details header, Win7's menu offering only the rest
-    enum SortKey { SortByName = 0, SortBySize, SortByFree, SortByType };
+    enum SortKey {
+        SortByName = 0,
+        SortBySize,
+        SortByFree,
+        SortByType,
+    };
 
     explicit ComputerModel(KFilePlacesModel *places, QObject *parent = nullptr);
 
@@ -78,10 +89,14 @@ private:
         // differing on every fresh instance of the same themed icon
         bool operator==(const Device &other) const
         {
-            return name == other.name && type == other.type && fsType == other.fsType
+            return name == other.name
+                && type == other.type
+                && fsType == other.fsType
                 && url == other.url
-                && total == other.total && available == other.available
-                && sizeKnown == other.sizeKnown && removable == other.removable
+                && total == other.total
+                && available == other.available
+                && sizeKnown == other.sizeKnown
+                && removable == other.removable
                 && placeRow == other.placeRow;
         }
     };

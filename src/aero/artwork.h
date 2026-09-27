@@ -18,8 +18,8 @@ QPixmap art(const QString &resource);
 
 // Holds cap columns at each end at their source width and stretches only what
 // lies between, so rounded corners and edge shading stay crisp
-void drawStretchedBetweenCaps(QPainter *p, const QRect &rect,
-                              const QPixmap &pm, int cap);
+void drawStretchedBetweenCaps(QPainter *painter, const QRect &rect,
+                              const QPixmap &pixmap, int cap);
 
 // The resource tiled sideways behind objectName, with extra appended to the
 // same rule
