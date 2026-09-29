@@ -39,6 +39,7 @@ Q_SIGNALS:
     void clicked();
 
 protected:
+    void mousePressEvent(QMouseEvent *e) override;
     void mouseReleaseEvent(QMouseEvent *e) override;
     void enterEvent(QEnterEvent *e) override;
     void leaveEvent(QEvent *e) override;

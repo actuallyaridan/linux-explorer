@@ -94,6 +94,15 @@ void LinkLabel::leaveEvent(QEvent *e)
     QLabel::leaveEvent(e);
 }
 
+void LinkLabel::mousePressEvent(QMouseEvent *e)
+{
+    if (e->button() == Qt::LeftButton) {
+        e->accept();
+        return;
+    }
+    QLabel::mousePressEvent(e);
+}
+
 void LinkLabel::mouseReleaseEvent(QMouseEvent *e)
 {
     // Dragging off the label is how Windows lets a click be taken back

@@ -13,18 +13,73 @@
 #include <QDragEnterEvent>
 #include <QDragMoveEvent>
 #include <QDropEvent>
+#include <QEnterEvent>
 #include <QFileInfo>
 #include <QFutureWatcher>
 #include <QInputDialog>
 #include <QMenu>
 #include <QMimeData>
 #include <QMouseEvent>
+#include <QPainter>
 #include <QStandardPaths>
 #include <QTreeWidget>
+#include <QVariantAnimation>
 #include <QVBoxLayout>
 #include <QtConcurrent>
 
 namespace {
+
+// How long the expander arrows take to fade in or out, in milliseconds
+constexpr int kArrowFadeDuration = 500;
+
+class NavigationTree : public QTreeWidget {
+    public:
+    explicit NavigationTree(QWidget *parent = nullptr)
+    : QTreeWidget(parent)
+    , m_fade(new QVariantAnimation(this))
+    {
+        m_fade->setDuration(kArrowFadeDuration);
+        connect(m_fade, &QVariantAnimation::valueChanged, this,
+                [this](const QVariant &value) {
+            m_arrowOpacity = value.toReal();
+            viewport()->update();
+        });
+    }
+
+    protected:
+    void enterEvent(QEnterEvent *event) override
+    {
+        fadeArrowsTo(1.0);
+        QTreeWidget::enterEvent(event);
+    }
+
+    void leaveEvent(QEvent *event) override
+    {
+        fadeArrowsTo(0.0);
+        QTreeWidget::leaveEvent(event);
+    }
+
+    void drawBranches(QPainter *painter, const QRect &rect,
+                        const QModelIndex &index) const override
+    {
+        painter->save();
+        painter->setOpacity(m_arrowOpacity);
+        QTreeWidget::drawBranches(painter, rect, index);
+        painter->restore();
+    }
+
+    private:
+        void fadeArrowsTo(qreal target)
+        {
+            m_fade->stop();
+            m_fade->setStartValue(m_arrowOpacity);
+            m_fade->setEndValue(target);
+            m_fade->start();
+        }
+
+    QVariantAnimation *m_fade = nullptr;
+    qreal m_arrowOpacity = 0.0;
+};
 
 // The stand in child that gives a collapsed folder its expander
 constexpr int kPlaceholderRole = Qt::UserRole + 1;
@@ -120,7 +175,7 @@ bool isItemVisible(QTreeWidgetItem *item)
 NavigationPane::NavigationPane(QWidget *parent)
     : QWidget(parent)
     , m_places(new KFilePlacesModel(this))
-    , m_tree(new QTreeWidget(this))
+    , m_tree(new NavigationTree(this))
     , m_watch(new KDirWatch(this))
 {
     auto *root = new QVBoxLayout(this);
