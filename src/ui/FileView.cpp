@@ -534,18 +534,7 @@ void FileView::onRenameDelegate(const QModelIndex &index, const QString &name)
     const bool nameChanged = !item.isNull() && !name.isEmpty() && name != item.name();
 
     if (nameChanged) {
-        if (m_renameState == RenameState::Locked) {
-            m_renameState = RenameState::Renaming;
-            Q_EMIT renameRequested(item.url(), name);
-        }
-        // FIXME: A workaround for closing the rename prompt without crashing.
-        return;
-    }
-
-    if (m_renameState != RenameState::Normal) {
-        m_renameState = RenameState::Normal;
-        QAbstractItemView *view = currentView();
-        Q_EMIT view->itemDelegate()->closeEditor(view->indexWidget(index));
+        Q_EMIT renameRequested(item.url(), name);
         return;
     }
 
@@ -996,25 +985,11 @@ void FileView::bindActivation(QAbstractItemView *view)
                                     QKeySequence(Qt::Key_Enter)}) {
         auto *action = new QAction(view);
         action->setShortcut(key);
-        action->setShortcutContext(Qt::WidgetWithChildrenShortcut);
-        connect(action, &QAction::triggered, this, [this, view, activate] {
+        action->setShortcutContext(Qt::WidgetShortcut);
+        connect(action, &QAction::triggered, this, [view, activate] {
             const QModelIndex current = view->currentIndex();
-            if (!current.isValid())
-                return;
-
-            switch (m_renameState) {
-            case RenameState::Normal:
+            if (current.isValid())
                 activate(current);
-                break;
-            case RenameState::Locked: {
-                // Enter inside the rename editor commits the new name
-                QWidget *editor = view->indexWidget(current);
-                Q_EMIT view->itemDelegate()->commitData(editor);
-                break;
-            }
-            case RenameState::Renaming:
-                break;
-            }
         });
         view->addAction(action);
     }
@@ -1127,7 +1102,6 @@ void FileView::renameItem(const QUrl &url)
     if (!index.isValid())
         return;
 
-    m_renameState = RenameState::Locked;
     QAbstractItemView *view = currentView();
     // Editing is off by default, so a stray double click cannot start a rename
     view->setEditTriggers(QAbstractItemView::AllEditTriggers);
@@ -1143,10 +1117,6 @@ bool FileView::selectUrl(const QUrl &url, bool startRename)
         return false;
 
     QAbstractItemView *view = currentView();
-    if (m_renameState != RenameState::Normal) {
-        Q_ASSERT(!startRename);
-        m_renameState = RenameState::Normal;
-    }
     view->setCurrentIndex(index);
     view->selectionModel()->select(index, QItemSelectionModel::ClearAndSelect
                                               | QItemSelectionModel::Rows);

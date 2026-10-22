@@ -11,4 +11,10 @@
         <file alias="drivefillblue.png">../../assets/images/drivefillblue.png</file>
         <file alias="drivefillred.png">../../assets/images/drivefillred.png</file>
     </qresource>
+    <qresource prefix="/win7-icons">
+        <file alias="non-empty-folder-16.png">../../assets/icons/non-empty-folder-16.png</file>
+        <file alias="non-empty-folder-32.png">../../assets/icons/non-empty-folder-32.png</file>
+        <file alias="non-empty-folder-48.png">../../assets/icons/non-empty-folder-48.png</file>
+        <file alias="non-empty-folder-256.png">../../assets/icons/non-empty-folder-256.png</file>
+    </qresource>
 </RCC>

@@ -6,6 +6,7 @@
 #include <KDirLister>
 #include <KDirModel>
 #include <KDirSortFilterProxyModel>
+#include <KIconLoader>
 #include <KIO/Global>
 #include <KIO/Job>
 #include <KIO/Paste>
@@ -18,6 +19,7 @@
 #include <QColor>
 #include <QDateTime>
 #include <QFileInfo>
+#include <QDir>
 #include <QIcon>
 #include <QLocale>
 #include <QMimeData>
@@ -72,7 +74,13 @@ public:
     explicit Win7ColumnProxy(QObject *parent = nullptr)
         : KDirSortFilterProxyModel(parent)
         , m_columns(defaultColumns())
+        , m_nonEmptyFolderIcon()
     {
+        m_nonEmptyFolderIcon.addFile(":/win7-icons/non-empty-folder-16.png", QSize(16, 16));
+        m_nonEmptyFolderIcon.addFile(":/win7-icons/non-empty-folder-32.png", QSize(32, 32));
+        m_nonEmptyFolderIcon.addFile(":/win7-icons/non-empty-folder-48.png", QSize(48, 48));
+        m_nonEmptyFolderIcon.addFile(":/win7-icons/non-empty-folder-256.png", QSize(256, 256));
+
         // From the clipboard rather than our own cut, since another file
         // manager's cut has to ghost these items too
         connect(QApplication::clipboard(), &QClipboard::dataChanged,
@@ -125,6 +133,8 @@ public:
         const KFileItem rightItem = fileItem(right);
         if (leftItem.isNull() || rightItem.isNull())
             return KDirSortFilterProxyModel::subSortLessThan(left, right);
+        else if (leftItem.isDir() != rightItem.isDir())
+            return leftItem.isDir();
 
         const QString leftName = displayName(leftItem);
         const QString rightName = displayName(rightItem);
@@ -156,12 +166,29 @@ public:
             const bool cut = isCut(item);
             const bool ghosted = item.isHidden()
                 || Branding::isSystemFolder(item.url().toLocalFile());
-            if (cut || ghosted) {
-                const QVariant base = KDirSortFilterProxyModel::data(index, role);
-                const QIcon icon = qvariant_cast<QIcon>(base);
-                const qreal opacity = cut ? kCutIconOpacity : kHiddenIconOpacity;
-                if (!icon.isNull())
-                    return fadedIcon(icon, opacity, cut);
+            const bool faded = cut || ghosted;
+
+            bool nonEmptyDir = item.isDir()
+                && item.currentMimeType().name() == QLatin1String("inode/directory");
+
+            if (nonEmptyDir) {
+                QDir dirContents(item.localPath());
+
+                dirContents.setFilter(QDir::Hidden | QDir::Files);
+
+                nonEmptyDir = (dirContents.exists(QLatin1String(".directory"))) ? false : !dirContents.isEmpty();
+            }
+
+            if (faded || nonEmptyDir) {
+                const QIcon icon = (nonEmptyDir) ? m_nonEmptyFolderIcon : KDE::icon(item.iconName(), KIconLoader::global());
+
+                if (!icon.isNull()) {
+                    if (faded) {
+                        const qreal opacity = cut ? kCutIconOpacity : kHiddenIconOpacity;
+                        return fadedIcon(icon, opacity, cut);
+                    } else
+                        return icon;
+                }
             }
         }
 
@@ -332,6 +359,7 @@ private:
     QList<int> m_columns;
     QSet<QUrl> m_cutUrls;
     mutable QHash<QString, QIcon> m_fadedIcons;
+    QIcon m_nonEmptyFolderIcon;
 };
 
 DirectoryModel::DirectoryModel(QObject *parent)
