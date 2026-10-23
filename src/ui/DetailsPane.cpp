@@ -34,7 +34,7 @@ DetailsPane::DetailsPane(QWidget *parent)
     root->addWidget(m_strip);
 }
 
-void DetailsPane::setContent(const QIcon &icon, const QString &primary,
+void DetailsPane::showContent(const QIcon &icon, const QString &primary,
                              const QString &secondary)
 {
     m_strip->setIcon(icon);
@@ -50,7 +50,7 @@ void DetailsPane::showFolderSummary(int itemCount, const QString &freeSpace)
     else
         count = tr("%1 items").arg(itemCount);
 
-    setContent(Aero::themeIcon({"folder"}), count, freeSpace);
+    showContent(Aero::themeIcon({"folder"}), count, freeSpace);
 }
 
 void DetailsPane::showDrive(const QModelIndex &index)
@@ -75,12 +75,12 @@ void DetailsPane::showDrive(const QModelIndex &index)
                       .arg(KIO::convertSize(available), KIO::convertSize(total));
     }
 
-    setContent(icon, name, detail);
+    showContent(icon, name, detail);
 }
 
 void DetailsPane::showMessage(const QString &message)
 {
-    setContent(Aero::themeIcon({"dialog-warning", "dialog-error"}), message, QString());
+    showContent(Aero::themeIcon({"dialog-warning", "dialog-error"}), message, QString());
 }
 
 void DetailsPane::showSelection(const QList<KFileItem> &items)
@@ -96,7 +96,7 @@ void DetailsPane::showSelection(const QList<KFileItem> &items)
         if (!item.isDir())
             detail = QStringLiteral("%1  •  %2").arg(item.mimeComment(),
                                                      KIO::convertSize(item.size()));
-        setContent(QIcon::fromTheme(item.iconName()), item.text(), detail);
+        showContent(QIcon::fromTheme(item.iconName()), item.text(), detail);
         return;
     }
 
@@ -114,6 +114,6 @@ void DetailsPane::showSelection(const QList<KFileItem> &items)
     if (anyDirs)
         detail = QStringLiteral("%1 (files only)").arg(detail);
 
-    setContent(Aero::themeIcon({"edit-select-all", "folder"}),
+    showContent(Aero::themeIcon({"edit-select-all", "folder"}),
                QStringLiteral("%1 items selected").arg(items.size()), detail);
 }

@@ -29,12 +29,14 @@ public:
     // Win7's Explorer has no status bar, so listing errors land here
     void showMessage(const QString &message);
 
+    // Anything else, such as a Control Panel list's summary, which Win7 also
+    // shows in this pane
+    void showContent(const QIcon &icon, const QString &primary,
+                     const QString &secondary = QString());
+
 private:
     // A 32px icon with two 9pt lines beside it
     static constexpr int kPaneHeight = 52;
-
-    void setContent(const QIcon &icon, const QString &primary,
-                    const QString &secondary);
 
     Aero::InfoStrip *m_strip;
     QLabel *m_primary = nullptr;

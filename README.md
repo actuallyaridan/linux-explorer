@@ -1,7 +1,7 @@
 <div align="center">
 
   # linux-explorer
-  <i>The Windows 7 Explorer, on Linux</i>
+  <i>The Windows 7 Explorer and Control Panel, on Linux</i>
 
   <p>
     A faithful recreation of Windows 7's Explorer built with Qt6, KDE Frameworks, and <a href="https://gitgud.io/atmk/libaero-qt">libAeroQt</a>, with every file operation handled by <a href="https://invent.kde.org/frameworks/kio">KIO</a>. Best enjoyed with <a href="https://github.com/aeroshell-desktop/aerothemeplasma">AeroThemePlasma</a>.
@@ -35,7 +35,7 @@ sudo mv explorer-x86_64 /usr/local/bin/explorer
 Built for CachyOS / Arch. Other distros should work given Qt6, KF6 and libAeroQt.
 
 ```bash
-sudo pacman -S qt6-base qt6-multimedia cmake kio kcoreaddons kwidgetsaddons kwindowsystem kio-extras
+sudo pacman -S qt6-base qt6-multimedia cmake kio kcoreaddons kwidgetsaddons kwindowsystem kio-extras libcups openssl zlib
 cmake -B build
 cmake --build build -j
 ./build/explorer
@@ -54,6 +54,24 @@ Everything below is checked for at runtime. Without one, the feature it backs is
 | `ark` | Send to → Compressed (zipped) folder |
 | `ffmpegthumbs`, `kdegraphics-thumbnailers` | Thumbnails for video, PDF and RAW |
 | `kdenetwork-filesharing` | Samba browsing behind Map network drive |
+| `polkit` | Installing and uninstalling programs from the Control Panel's Programs and Features |
+| `yay` | Reinstalling AUR programs from Programs and Features |
+| `ufw` | Firewall status and rules on the Control Panel's Firewall page |
+
+## Control Panel
+
+The Windows 7 Control Panel is part of Explorer, the way it is on Windows: it opens in an Explorer window, with the same address bar and back button, and it has its own Start menu entry. Open it with **Open Control Panel** in Computer, by typing `Control Panel` into the address bar, or with:
+
+```bash
+explorer --control-panel
+```
+
+It shows real system data: Linux Update checks and installs through `pacman`, Installed Updates reads `pacman.log`, Programs and Features lists and uninstalls packages, and the Performance page runs a Windows Experience Index style benchmark. Some pages are still placeholders.
+
+> [!NOTE]
+> Linux Update and Programs and Features depend on `pacman`, so on distributions other than Arch they won't work yet.
+
+Under **Organize → Folder and search options → General → Programs** you can keep both, use Explorer only (the Control Panel is turned off and leaves the Start menu), or use the Control Panel only (File Explorer leaves the Start menu, and windows stay on the Control Panel).
 
 ### Being the system's file manager
 
@@ -87,6 +105,7 @@ What's left is the Windows 7 look and feel, which is the part worth building fro
 ```bash
 explorer ~/Documents          # open a folder
 explorer --select ~/a.txt     # open its folder with the file selected
+explorer --control-panel      # open the Control Panel
 ```
 
 ## Part of the WSL (Windows-alike Software for Linux) series
@@ -94,5 +113,4 @@ explorer --select ~/a.txt     # open its folder with the file selected
 Why don't you also check out the other ones?
 
 - [Linux Device Manager](https://github.com/actuallyaridan/linux-devmgmt)
-- [Linux Control Panel](https://github.com/actuallyaridan/linux-control)
 - [Linux Minesweeper](https://github.com/actuallyaridan/linux-minesweeper)

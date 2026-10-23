@@ -49,6 +49,11 @@ private:
 };
 
 // The round Aero expander, checked when expanded, its arrow pointing up
+// One of the icon buttons at the right end of a command bar, such as Change
+// your view and Help: the bare icon with a pointing hand and nothing drawn
+// around it
+QToolButton *commandBarButton(const QIcon &icon, const QString &toolTip);
+
 class ChevronButton : public QToolButton {
     Q_OBJECT
 

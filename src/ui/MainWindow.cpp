@@ -4,6 +4,9 @@
 #include "Branding.h"
 #include "ComputerModel.h"
 #include "ComputerView.h"
+#include "ui/control/ControlPanelView.h"
+#include "ui/control/PageRegistry.h"
+#include "MenuEntries.h"
 #include "DetailsPane.h"
 #include "DirectoryModel.h"
 #include "DriveLabel.h"
@@ -109,6 +112,43 @@ constexpr int kMaxRecentEntries = 15;
 // In creation order, and owning nothing, windows deleting themselves on close
 QList<MainWindow *> g_windows;
 
+// Where a window may go in the current mode: with the Control Panel alone every
+// location is its home page, and with it turned off its pages are Computer
+QUrl locationForMode(const QUrl &url)
+{
+    const Settings::AppMode mode = Settings::appMode();
+    const bool controlPanel = Locations::isControlPanel(url);
+
+    if (mode == Settings::AppMode::ControlPanelOnly && !controlPanel)
+        return Locations::controlPanel();
+    if (mode == Settings::AppMode::ExplorerOnly && controlPanel)
+        return Locations::computer();
+    return url;
+}
+
+// Win7's address bar takes "Control Panel" typed as if it were a path, with
+// the page after it, so this gives the location for that text and an invalid
+// one for anything else, which is then read as an ordinary path
+QUrl controlPanelFromTyped(const QString &text)
+{
+    const QString name = QStringLiteral("Control Panel");
+    if (!text.startsWith(name, Qt::CaseInsensitive))
+        return {};
+
+    QString page = text.mid(name.length());
+    page.replace(QLatin1Char('\\'), QLatin1Char('/'));
+
+    // "Control Panels" is a name of its own rather than a page under it
+    if (!page.isEmpty() && !page.startsWith(QLatin1Char('/')))
+        return {};
+
+    while (page.startsWith(QLatin1Char('/')))
+        page.remove(0, 1);
+    while (page.endsWith(QLatin1Char('/')))
+        page.chop(1);
+    return Locations::controlPanel(ControlPanel::View::resolvePath(page));
+}
+
 } // namespace
 
 int MainWindow::openWindowCount()
@@ -120,8 +160,20 @@ MainWindow *MainWindow::openWindow(const QUrl &folder, const QList<QUrl> &select
                                    const QString &startupId)
 {
     QUrl target = folder;
-    if (!target.isValid())
-        target = Locations::computer();
+    if (!target.isValid()) {
+        // A plain launch, which with the Control Panel alone opens it directly
+        // rather than being redirected there with a notice
+        if (Settings::appMode() == Settings::AppMode::ControlPanelOnly)
+            target = Locations::controlPanel();
+        else
+            target = Locations::computer();
+    }
+
+    // Decided here rather than left to the new window, so a window already on
+    // the allowed location is the one reused
+    const QUrl allowed = locationForMode(target);
+    const bool redirected = !allowed.matches(target, QUrl::StripTrailingSlash);
+    target = allowed;
 
     // Two reveal requests for the same folder should end up as one window with
     // both files showing
@@ -139,6 +191,9 @@ MainWindow *MainWindow::openWindow(const QUrl &folder, const QList<QUrl> &select
 
     if (!selection.isEmpty())
         window->selectOnArrival(selection);
+
+    if (redirected)
+        window->showModeNotice();
 
     // Without the caller's token the window is stacked on top but left
     // unfocused, covering what the user was doing and still refusing their keys
@@ -201,6 +256,25 @@ MainWindow::Crumb MainWindow::driveFor(const QString &path) const
 QList<MainWindow::Crumb> MainWindow::crumbsFor(const QUrl &url) const
 {
     QList<Crumb> crumbs;
+
+    // Win7's Control Panel trail starts at the Control Panel itself rather
+    // than at Computer, and each page is a crumb the way a folder is
+    if (Locations::isControlPanel(url)) {
+        crumbs.append({tr("Control Panel"), Locations::controlPanel()});
+
+        const QStringList segments = Locations::controlPanelPage(url).split(
+            QLatin1Char('/'), Qt::SkipEmptyParts);
+        QString walk;
+        for (const QString &segment : segments) {
+            if (!walk.isEmpty())
+                walk += QLatin1Char('/');
+            walk += segment;
+            crumbs.append({ControlPanel::View::displayName(segment),
+                           Locations::controlPanel(walk)});
+        }
+        return crumbs;
+    }
+
     crumbs.append({tr("Computer"), Locations::computer()});
 
     if (Locations::isComputer(url))
@@ -326,7 +400,8 @@ MainWindow::MainWindow(const QUrl &startUrl, QWidget *parent)
     QWidget *body = buildBody();
     buildActions();
 
-    root->addWidget(buildCommandBar());
+    m_commandBar = buildCommandBar();
+    root->addWidget(m_commandBar);
     root->addWidget(buildSearchAgainBar());
     root->addWidget(buildNotificationBar());
     root->addWidget(body, 1);
@@ -387,7 +462,7 @@ MainWindow::MainWindow(const QUrl &startUrl, QWidget *parent)
         // list up means watching the batches trickle in and only then being
         // replaced by a placeholder
         m_loadingLabel->hide();
-        if (!isComputerView())
+        if (!isComputerView() && !isControlPanelView())
             m_stack->setCurrentWidget(m_loadingPage);
         m_loadingTimer->start();
 
@@ -481,9 +556,12 @@ MainWindow::MainWindow(const QUrl &startUrl, QWidget *parent)
     // the dialog
     m_fileView->setSingleClickToOpen(Settings::singleClickToOpen());
 
-    // Not a navigation, opening a window not counting as one
-    pushHistory(startUrl);
-    showLocation(startUrl);
+    // Not a navigation, opening a window not counting as one, though the mode
+    // can still send it somewhere other than where it was asked to open
+    const QUrl start = locationForMode(startUrl);
+    m_pendingModeRedirect = !start.matches(startUrl, QUrl::StripTrailingSlash);
+    pushHistory(start);
+    showLocation(start);
 }
 
 // The window class a decoration theme matches on is the app id, which Qt reads
@@ -511,7 +589,11 @@ MainWindow::~MainWindow()
 void MainWindow::closeEvent(QCloseEvent *event)
 {
     Settings::setWindowGeometry(saveGeometry());
-    Settings::setSplitterState(m_splitter->saveState());
+
+    // The Control Panel hides the panes, which would otherwise be remembered
+    // as closed for every window opened after this one
+    if (!m_controlPanelLayout)
+        Settings::setSplitterState(m_splitter->saveState());
     Settings::setHeaderState(m_fileView->headerState());
     QMainWindow::closeEvent(event);
 }
@@ -631,13 +713,15 @@ void MainWindow::buildActions()
     m_actMapDrive = windowAction(tr("Map network drive..."),
                                  &MainWindow::showMapDriveDialog);
     m_actExtract = windowAction(tr("Extract All..."), &MainWindow::extractSelection);
-    m_actOptions = windowAction(tr("Folder and search options"),
-                                &MainWindow::showOptionsDialog);
+    m_actOptions = windowAction(tr("Folder and search options"), [this] {
+        showOptionsDialog(OptionsDialog::Tab::General);
+    });
     m_actOpenAsAdmin = windowAction(tr("Run as Administrator"),
                                     &MainWindow::openAsAdministrator);
 
     m_actPreviewPane = windowAction(tr("Preview pane"), [this](bool on) {
-        m_previewPane->setVisible(on);
+        // Remembered but not shown on a Control Panel page, which has no files
+        m_previewPane->setVisible(on && !isControlPanelView());
         if (on)
             m_previewPane->setItems(selectedItems());
     }, QKeySequence(Qt::ALT | Qt::Key_P));
@@ -827,6 +911,8 @@ void MainWindow::buildMenuBar()
     go->addSeparator();
     go->addAction(tr("Computer"), this,
                   [this] { navigateTo(Locations::computer()); });
+    m_actGoControlPanel = go->addAction(tr("Control Panel"), this,
+                                        [this] { navigateTo(Locations::controlPanel()); });
     go->addAction(tr("Home"), this, [this] {
         navigateTo(QUrl::fromLocalFile(QDir::homePath()));
     });
@@ -907,8 +993,11 @@ void MainWindow::showPathHistoryMenu()
     for (const QString &path : paths) {
         QAction *action = menu.addAction(path);
         connect(action, &QAction::triggered, this, [this, path] {
-            const QUrl target = QUrl::fromUserInput(path, QDir::homePath(),
-                                                    QUrl::AssumeLocalFile);
+            QUrl target = controlPanelFromTyped(path);
+            if (!target.isValid()) {
+                target = QUrl::fromUserInput(path, QDir::homePath(),
+                                             QUrl::AssumeLocalFile);
+            }
             if (target.isValid())
                 navigateTo(target);
         });
@@ -953,6 +1042,9 @@ void MainWindow::cyclePanes(bool forward)
         const int next = (current + offset) % StopCount;
         switch (next) {
         case NavigationPaneStop:
+            // Hidden on Control Panel pages, or by the user
+            if (m_places->isHidden())
+                continue;
             m_places->setFocus(Qt::TabFocusReason);
             return;
         case AddressStop:
@@ -963,6 +1055,8 @@ void MainWindow::cyclePanes(bool forward)
                 endPathEdit();
             if (isComputerView())
                 m_computerView->focusView();
+            else if (isControlPanelView())
+                m_controlPanelView->setFocus(Qt::TabFocusReason);
             else
                 m_fileView->focusView();
             return;
@@ -1184,6 +1278,8 @@ QIcon MainWindow::locationIcon(const QUrl &url) const
 {
     if (Locations::isComputer(url))
         return Aero::themeIcon({"computer", "computer-laptop"});
+    if (Locations::isControlPanel(url))
+        return Aero::themeIcon({"preferences-system"});
     if (Locations::isSearch(url))
         return Aero::themeIcon({"system-search", "folder-saved-search"});
 
@@ -1195,6 +1291,32 @@ QIcon MainWindow::locationIcon(const QUrl &url) const
         return places->icon(index);
 
     return QIcon::fromTheme(KIO::iconNameForUrl(url), Aero::themeIcon({"folder"}));
+}
+
+void MainWindow::setControlPanelLayout(bool controlPanel)
+{
+    if (controlPanel == m_controlPanelLayout)
+        return;
+    m_controlPanelLayout = controlPanel;
+
+    // Remembered on the way in, the Layout menu that changes them being on the
+    // command bar, which cannot be reached while the Control Panel shows
+    if (controlPanel) {
+        m_navigationPaneWasShown = !m_places->isHidden();
+        m_detailsPaneWasShown = !m_details->isHidden();
+    }
+
+    m_commandBar->setVisible(!controlPanel);
+    m_places->setVisible(!controlPanel && m_navigationPaneWasShown);
+    m_details->setVisible(!controlPanel && m_detailsPaneWasShown);
+    m_previewPane->setVisible(!controlPanel && m_actPreviewPane->isChecked());
+
+    // Explorer's application icon is the file manager's, so the Control Panel
+    // sets its own, and an empty icon falls back to the application's again
+    if (controlPanel)
+        setWindowIcon(Aero::themeIcon({"preferences-system"}));
+    else
+        setWindowIcon(QIcon());
 }
 
 void MainWindow::clearPathLayout()
@@ -1225,6 +1347,15 @@ void MainWindow::beginPathEdit()
     QString editText = url.toString();
     if (url.isLocalFile() || elevated)
         editText = displayPath(url);
+
+    // Spelled out as its trail, the way Win7 shows it and what the field
+    // accepts back
+    if (Locations::isControlPanel(url)) {
+        editText = QStringLiteral("Control Panel");
+        const QString page = Locations::controlPanelPage(url);
+        if (!page.isEmpty())
+            editText += QLatin1Char('/') + page;
+    }
     m_pathEdit = new QLineEdit(editText);
     m_pathEdit->setFrame(false);
     Aero::setPointSize(m_pathEdit, 9);
@@ -1251,6 +1382,18 @@ void MainWindow::beginPathEdit()
             endPathEdit();
             return;
         }
+
+        // Not a path at all, but Win7 takes it in the same field
+        const QUrl controlPanel = controlPanelFromTyped(text);
+        if (controlPanel.isValid()) {
+            Settings::addRecentPath(text);
+            if (controlPanel.matches(currentUrl(), QUrl::StripTrailingSlash))
+                endPathEdit();
+            else
+                navigateTo(controlPanel);
+            return;
+        }
+
         if (text.startsWith(QLatin1Char('~')))
             text.replace(0, 1, QDir::homePath());
 
@@ -1360,6 +1503,10 @@ void MainWindow::showCrumbMenu(QLabel *arrow)
         // The leading arrow lists the places
         menu.addAction(Aero::themeIcon({"computer", "computer-laptop"}), tr("Computer"),
                        this, [this] { navigateTo(Locations::computer()); });
+        if (Settings::appMode() != Settings::AppMode::ExplorerOnly) {
+            menu.addAction(Aero::themeIcon({"preferences-system"}), tr("Control Panel"),
+                           this, [this] { navigateTo(Locations::controlPanel()); });
+        }
         menu.addSeparator();
         KFilePlacesModel *places = m_places->placesModel();
         for (int row = 0; row < places->rowCount(); ++row) {
@@ -1379,6 +1526,23 @@ void MainWindow::showCrumbMenu(QLabel *arrow)
             menu.addAction(qvariant_cast<QIcon>(index.data(Qt::DecorationRole)),
                            index.data(Qt::DisplayRole).toString(), this,
                            [this, url] { navigateTo(url); });
+        }
+    } else if (Locations::isControlPanel(parent)) {
+        // Only the home page lists what is under it, the categories, and the
+        // one on show is ticked as a folder on the current path is
+        if (Locations::controlPanelPage(parent).isEmpty()) {
+            const QString here = Locations::controlPanelPage(currentUrl());
+            for (const QString &category : ControlPanel::View::categories()) {
+                const QUrl url = Locations::controlPanel(category);
+                QAction *action = menu.addAction(
+                    ControlPanel::View::displayName(category), this,
+                    [this, url] { navigateTo(url); });
+
+                const bool onCurrentPath = here == category
+                    || here.startsWith(category + QLatin1Char('/'));
+                action->setCheckable(true);
+                action->setChecked(onCurrentPath);
+            }
         }
     } else if (parent.isLocalFile()) {
         const bool showHidden = m_model->showHiddenFiles();
@@ -1499,24 +1663,19 @@ QWidget *MainWindow::buildCommandBar()
     m_commandLayout->addStretch(1);
 
     // Shares the view menu's actions, so the two cannot drift apart
-    auto *viewButton = new QToolButton;
+    const QIcon viewIcon =
+        Aero::themeIcon({"view-list-details", "view-list-text", "view-choose"});
+    QToolButton *viewButton = Aero::commandBarButton(viewIcon, tr("Change your view"));
     viewButton->setPopupMode(QToolButton::InstantPopup);
-    viewButton->setCursor(Qt::PointingHandCursor);
-    viewButton->setStyleSheet("QToolButton { border: none; background: transparent; }"
-                              "QToolButton::menu-indicator { image: none; }");
-    viewButton->setIcon(Aero::themeIcon({"view-list-details", "view-list-text", "view-choose"}));
-    viewButton->setToolTip(tr("Change your view"));
     auto *viewMenu = new QMenu(viewButton);
     for (QAction *action : m_viewModeGroup->actions())
         viewMenu->addAction(action);
     viewButton->setMenu(viewMenu);
     m_commandLayout->addWidget(viewButton);
 
-    auto *helpButton = new QToolButton;
-    helpButton->setCursor(Qt::PointingHandCursor);
-    helpButton->setStyleSheet("QToolButton { border: none; background: transparent; }");
-    helpButton->setIcon(Aero::themeIcon({"help-contents", "help-browser", "system-help"}));
-    helpButton->setToolTip(tr("Help"));
+    const QIcon helpIcon =
+        Aero::themeIcon({"help-contents", "help-browser", "system-help"});
+    QToolButton *helpButton = Aero::commandBarButton(helpIcon, tr("Help"));
     helpButton->setShortcut(QKeySequence(Qt::Key_F1));
     connect(helpButton, &QToolButton::clicked, this, &MainWindow::showAboutDialog);
     m_commandLayout->addWidget(helpButton);
@@ -1559,15 +1718,27 @@ void MainWindow::rebuildContextualCommands()
     if (isComputerView()) {
         // Win7's own row, each opening the KDE app that does the same job
         addButton(tr("System properties"), nullptr, [this] {
-            openSystemApplication({QStringLiteral("org.kde.kinfocenter")});
+            if (Settings::appMode() == Settings::AppMode::ExplorerOnly) {
+                openSystemApplication({QStringLiteral("org.kde.kinfocenter")});
+                return;
+            }
+            const QString page = ControlPanel::PageRegistry::pathFor(
+                ControlPanel::PageId::System);
+            navigateTo(Locations::controlPanel(page));
         });
 
         // Whichever software manager is installed, Discover first as the one
         // that ships with Plasma
         addButton(tr("Uninstall or change a program"), nullptr, [this] {
-            openSystemApplication({QStringLiteral("org.kde.discover"),
-                                   QStringLiteral("org.manjaro.pamac.manager"),
-                                   QStringLiteral("octopi")});
+            if (Settings::appMode() == Settings::AppMode::ExplorerOnly) {
+                              openSystemApplication({QStringLiteral("org.kde.discover"),
+                                     QStringLiteral("org.manjaro.pamac.manager"),
+                                     QStringLiteral("octopi")});
+                return;
+            }
+            const QString page = ControlPanel::PageRegistry::pathFor(
+                ControlPanel::PageId::ProgramsFeatures);
+            navigateTo(Locations::controlPanel(page));
         });
 
         addButton(tr("Map network drive"), nullptr,
@@ -1576,7 +1747,11 @@ void MainWindow::rebuildContextualCommands()
                   [this] { m_actConnectDrives->trigger(); });
 
         addButton(tr("Open Control Panel"), nullptr, [this] {
-            openSystemApplication({QStringLiteral("systemsettings")});
+            if (Settings::appMode() == Settings::AppMode::ExplorerOnly) {
+                openSystemApplication({QStringLiteral("systemsettings")});
+                return;
+            }
+            navigateTo(Locations::controlPanel());
         });
         return;
     }
@@ -1714,9 +1889,18 @@ QWidget *MainWindow::buildNotificationBar()
         else if (link == QLatin1String("mount-dlg"))
             showMountDialog();
     });
-    // Dismissing hides it for the rest of the session
+    // A button rather than a link, which is how the strip offers a fix
+    m_changeModeAction = new QAction(tr("Change setting..."), m_notification);
+    connect(m_changeModeAction, &QAction::triggered, this, [this] {
+        showOptionsDialog(OptionsDialog::Tab::General);
+    });
+
+    // Dismissing the drives notice hides it for the rest of the session, where
+    // a mode notice only ever explained the one page anyway
     connect(m_notification, &KMessageWidget::hideAnimationFinished, this, [this] {
-        m_notificationDismissed = true;
+        if (m_notice == Notice::UnmountedDrives)
+            m_notificationDismissed = true;
+        m_modeRedirected = false;
     });
 
     return m_notification;
@@ -1727,6 +1911,16 @@ MainWindow::Notice MainWindow::pendingNotice() const
     // Only one strip, and the administrator warning outranks the drives notice
     if (currentUrl().scheme() == QLatin1String("admin"))
         return Notice::Administrator;
+
+    // Only in the mode that turned the request away, since Apply may have
+    // changed it since
+    if (m_modeRedirected) {
+        const Settings::AppMode mode = Settings::appMode();
+        if (mode == Settings::AppMode::ControlPanelOnly)
+            return Notice::ControlPanelOnly;
+        if (mode == Settings::AppMode::ExplorerOnly)
+            return Notice::ControlPanelOff;
+    }
 
     if (isComputerView() && !m_notificationDismissed
         && Settings::notifyUnmountedDrives()
@@ -1743,18 +1937,34 @@ void MainWindow::updateNotification()
         return;
 
     m_notice = pendingNotice();
+
+    // Only the mode notices have a button, and it is put back for them below
+    m_notification->clearActions();
+
     if (m_notice == Notice::None) {
-        m_notification->clearActions();
+        // At once rather than animated, the end of the animation counting as
+        // the user dismissing it
+        m_notification->hide();
         return;
     }
 
-    // The drives notice can be waved away, where the administrator one stays
-    // for as long as it is true
+    // The drives and mode notices can be waved away, where the administrator
+    // one stays for as long as it is true
     if (m_notice == Notice::Administrator) {
         m_notification->setText(
             tr("You're navigating as an administrator, be careful. "
                "<a href=\"admin-warning\">Click for information...</a>"));
         m_notification->setCloseButtonVisible(false);
+    } else if (m_notice == Notice::ControlPanelOnly) {
+        m_notification->setText(
+            tr("Control Panel only mode is on, so files and folders can't be "
+               "opened."));
+        m_notification->setCloseButtonVisible(true);
+        m_notification->addAction(m_changeModeAction);
+    } else if (m_notice == Notice::ControlPanelOff) {
+        m_notification->setText(tr("The Control Panel is turned off."));
+        m_notification->setCloseButtonVisible(true);
+        m_notification->addAction(m_changeModeAction);
     } else {
         m_notification->setText(unmountedDrivesNotice(m_computerModel->unmountedCount()));
         m_notification->setCloseButtonVisible(true);
@@ -1836,6 +2046,29 @@ QWidget *MainWindow::buildBody()
             action->setChecked(action->data().toInt() == int(mode));
     });
 
+    m_controlPanelView = new ControlPanel::View;
+    // The view only asks and the window decides, so going to a page records
+    // history and plays the sound like any other navigation
+    connect(m_controlPanelView, &ControlPanel::View::pathRequested, this,
+            [this](const QString &page) {
+        navigateTo(Locations::controlPanel(page));
+    });
+    connect(m_controlPanelView, &ControlPanel::View::backRequested,
+            this, &MainWindow::goBack);
+    connect(m_controlPanelView, &ControlPanel::View::folderOptionsRequested, this,
+            [this](const QString &tab) {
+        OptionsDialog::Tab which = OptionsDialog::Tab::General;
+        if (tab == QLatin1String("view"))
+            which = OptionsDialog::Tab::View;
+        showOptionsDialog(which);
+    });
+    // A branding change renames pages, so the crumbs and title are redrawn too
+    connect(m_controlPanelView, &ControlPanel::View::reloadRequested, this, [] {
+        // The setting is the whole program's, folder names included
+        for (MainWindow *window : std::as_const(g_windows))
+            window->refreshBranding();
+    });
+
     m_listPage = new QWidget;
     m_listPage->setObjectName(QStringLiteral("fileListPage"));
     m_listPage->setStyleSheet(Aero::panelSheet(m_listPage->objectName(), Aero::Palette::Surface));
@@ -1858,6 +2091,7 @@ QWidget *MainWindow::buildBody()
     m_stack->addWidget(m_listPage);
     m_stack->addWidget(m_computerView);
     m_stack->addWidget(m_loadingPage);
+    m_stack->addWidget(m_controlPanelView);
     m_splitter->addWidget(m_stack);
 
     // In the splitter rather than floating over the list, so its edge resizes
@@ -1966,6 +2200,11 @@ bool MainWindow::isComputerView() const
     return m_stack && m_stack->currentWidget() == m_computerView;
 }
 
+bool MainWindow::isControlPanelView() const
+{
+    return m_stack && m_stack->currentWidget() == m_controlPanelView;
+}
+
 bool MainWindow::isTrashView() const
 {
     return currentUrl().scheme() == QLatin1String("trash");
@@ -1985,6 +2224,11 @@ void MainWindow::showLocation(const QUrl &url)
 {
     invalidateSelection();
 
+    // Back, Forward and the rest show a location without a redirect, which
+    // takes the last one's notice away with it
+    m_modeRedirected = m_pendingModeRedirect;
+    m_pendingModeRedirect = false;
+
     if (Locations::isComputer(url)) {
         // Never handed to KIO, there being no worker, and this page is built
         // in process and always ready so a pending placeholder is cancelled
@@ -1999,6 +2243,13 @@ void MainWindow::showLocation(const QUrl &url)
         if (Settings::hasViewModeFor(url))
             mode = Settings::viewModeFor(url);
         m_computerView->setViewMode(mode);
+    } else if (Locations::isControlPanel(url)) {
+        // Built in process like the drives page, so nothing is loading either
+        m_loading = false;
+        m_loadingTimer->stop();
+        stopPathProgress();
+        m_stack->setCurrentWidget(m_controlPanelView);
+        m_controlPanelView->showPath(Locations::controlPanelPage(url));
     } else {
         m_stack->setCurrentWidget(m_listPage);
         m_model->setUrl(url);
@@ -2008,6 +2259,7 @@ void MainWindow::showLocation(const QUrl &url)
         m_fileView->setViewMode(Settings::viewModeFor(url));
     }
 
+    setControlPanelLayout(Locations::isControlPanel(url));
     m_places->setCurrentUrl(url);
     setCrumbTrail(url);
 
@@ -2022,7 +2274,9 @@ void MainWindow::showLocation(const QUrl &url)
     } else {
         m_searchBox->clear();
     }
-    m_searchBox->setEnabled(!Locations::isComputer(url));
+    // Neither has a folder to search
+    m_searchBox->setEnabled(!Locations::isComputer(url)
+                            && !Locations::isControlPanel(url));
 
     updateWindowTitle();
     updateDetailsPane();
@@ -2035,12 +2289,31 @@ void MainWindow::showLocation(const QUrl &url)
 
 void MainWindow::navigateTo(const QUrl &url)
 {
-    if (!url.isValid() || url.matches(currentUrl(), QUrl::StripTrailingSlash))
+    if (!url.isValid())
+        return;
+
+    // The mode can send the window somewhere other than where it was asked
+    // to go, and only the allowed location goes into the history
+    const QUrl target = locationForMode(url);
+    const bool redirected = !target.matches(url, QUrl::StripTrailingSlash);
+
+    if (target.matches(currentUrl(), QUrl::StripTrailingSlash)) {
+        // Already there, but a request turned away still says why
+        if (redirected)
+            showModeNotice();
         return;   // no sound and no history entry for navigating nowhere
+    }
 
     m_navSound.play();
-    pushHistory(url);
-    showLocation(url);
+    m_pendingModeRedirect = redirected;
+    pushHistory(target);
+    showLocation(target);
+}
+
+void MainWindow::showModeNotice()
+{
+    m_modeRedirected = true;
+    updateNotification();
 }
 
 void MainWindow::goBack()
@@ -2068,6 +2341,21 @@ void MainWindow::goUp()
     const QUrl current = currentUrl();
     if (Locations::isComputer(current))
         return;   // Computer is the top of the tree, with nowhere above it
+
+    // The page above, the way the crumbs read, and the home page has nothing
+    // above it as Computer has nothing
+    if (Locations::isControlPanel(current)) {
+        const QString page = Locations::controlPanelPage(current);
+        if (page.isEmpty())
+            return;
+
+        QString parent;
+        const int slash = page.lastIndexOf(QLatin1Char('/'));
+        if (slash >= 0)
+            parent = page.left(slash);
+        navigateTo(Locations::controlPanel(ControlPanel::View::resolvePath(parent)));
+        return;
+    }
 
     // The folder that was searched is the only sensible parent for results
     if (Locations::isSearch(current)) {
@@ -2102,6 +2390,13 @@ void MainWindow::goUp()
 
 void MainWindow::refresh()
 {
+    // Drawn again from what the system reports now, there being no listing to
+    // read again
+    if (isControlPanelView()) {
+        m_controlPanelView->showPath(m_controlPanelView->currentPath());
+        return;
+    }
+
     if (isComputerView())
         m_computerModel->refresh();
     else
@@ -2138,8 +2433,13 @@ void MainWindow::updateWindowTitle()
     if (!crumbs.isEmpty())
         label = crumbs.last().label;
     setWindowTitle(label);
-    // Win7's search box names the folder it will search
-    m_searchBox->setPlaceholderText(tr("Search %1").arg(label));
+
+    // Win7's search box names the folder it will search, and on every Control
+    // Panel page the Control Panel as a whole
+    if (Locations::isControlPanel(currentUrl()))
+        m_searchBox->setPlaceholderText(tr("Search Control Panel"));
+    else
+        m_searchBox->setPlaceholderText(tr("Search %1").arg(label));
 }
 
 void MainWindow::startSearch()
@@ -2194,12 +2494,15 @@ void MainWindow::showAboutDialog()
     dialog.exec();
 }
 
-void MainWindow::showOptionsDialog()
+void MainWindow::showOptionsDialog(OptionsDialog::Tab tab)
 {
     OptionsDialog dialog(this);
+    dialog.showTab(tab);
 
-    // Every window, these being application settings
+    // Every window, these being application settings, and the start menu once
+    // for all of them
     connect(&dialog, &OptionsDialog::applied, this, [] {
+        MenuEntries::apply(Settings::appMode());
         for (MainWindow *window : std::as_const(g_windows))
             window->applyOptions();
     });
@@ -2242,6 +2545,12 @@ void MainWindow::applyOptions()
     refreshBranding();
     updateActionStates();
     updateNotification();
+
+    // A window left somewhere the new mode does not allow moves to where it
+    // may be, and the strip says why
+    const QUrl current = currentUrl();
+    if (!locationForMode(current).matches(current, QUrl::StripTrailingSlash))
+        navigateTo(current);
 }
 
 void MainWindow::showMapDriveDialog()
@@ -2258,6 +2567,11 @@ void MainWindow::showMapDriveDialog()
 
 void MainWindow::setViewMode(Settings::ViewMode mode)
 {
+    // Pages rather than items, so there is no view mode to change, and saving
+    // one would make the Control Panel the default for every folder
+    if (isControlPanelView())
+        return;
+
     if (isComputerView()) {
         // For this page alone, a mode picked for drives not following the user
         // into folders
@@ -2304,6 +2618,10 @@ void MainWindow::refreshBranding()
     setCrumbTrail(currentUrl());
     m_places->refresh();
     updateWindowTitle();
+
+    // The Control Panel's pages are drawn with the names in them
+    if (isControlPanelView())
+        m_controlPanelView->showPath(m_controlPanelView->currentPath());
 }
 
 void MainWindow::updateListMessage()
@@ -2405,7 +2723,10 @@ void MainWindow::updateActionStates()
     const QList<KFileItem> selection = selectedItems();
     const bool any = !selection.isEmpty();
     const bool one = selection.size() == 1;
-    const bool computer = isComputerView();
+    // The Control Panel has no files either, so the file commands stand down
+    // as they do on the drives page
+    const bool controlPanel = isControlPanelView();
+    const bool computer = isComputerView() || controlPanel;
     const bool trash = isTrashView();
     const QUrl folder = operationFolder();
 
@@ -2447,8 +2768,16 @@ void MainWindow::updateActionStates()
     m_actSelectAll->setEnabled(!computer);
     m_actInvertSelection->setEnabled(!computer);
     m_actOpenTerminal->setEnabled(folder.isLocalFile());
-    m_actUp->setEnabled(!computer);
+    // The Control Panel's home page is as far up as it goes, as Computer is
+    const bool controlPanelHome = controlPanel
+        && Locations::controlPanelPage(currentUrl()).isEmpty();
+    m_actUp->setEnabled(!isComputerView() && !controlPanelHome);
     m_actUndo->setEnabled(FileOps::isUndoAvailable());
+
+    if (m_actGoControlPanel) {
+        const bool turnedOff = Settings::appMode() == Settings::AppMode::ExplorerOnly;
+        m_actGoControlPanel->setVisible(!turnedOff);
+    }
 
     const bool archiveSelected = one && Archives::isBrowsable(selection.first());
     m_actExtract->setEnabled(archiveSelected || Archives::isInsideArchive(currentUrl()));
@@ -2463,7 +2792,7 @@ void MainWindow::updateActionStates()
     // being over the file list's columns while drives sort from their own
     const Settings::ViewMode mode = currentViewMode();
     for (QAction *action : m_viewModeGroup->actions()) {
-        action->setEnabled(true);
+        action->setEnabled(!controlPanel);
         action->setChecked(action->data().toInt() == int(mode));
     }
     for (QAction *action : m_sortGroup->actions()) {
@@ -2994,7 +3323,7 @@ QList<KFileItem> MainWindow::selectedItems() const
     // The drives page has devices for rows, and its indices bear no relation to
     // the directory model's
     m_selection.clear();
-    if (m_fileView && !isComputerView())
+    if (m_fileView && !isComputerView() && !isControlPanelView())
         m_selection = m_model->itemsForIndexes(m_fileView->selectedIndexes());
     m_selectionValid = true;
     return m_selection;

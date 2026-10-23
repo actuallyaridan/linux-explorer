@@ -1,5 +1,6 @@
 #pragma once
 
+#include "OptionsDialog.h"
 #include "Settings.h"
 
 #include <QHash>
@@ -38,6 +39,10 @@ class QModelIndex;
 class QPoint;
 class QPushButton;
 class QWidget;
+
+namespace ControlPanel {
+class View;
+}
 
 // The Explorer window
 //
@@ -81,8 +86,15 @@ private:
     QWidget *buildNotificationBar();
     QWidget *buildBody();
 
-    // The administrator warning outranks the drives notice
-    enum class Notice { None, Administrator, UnmountedDrives };
+    // The administrator warning outranks the mode notices, which outrank the
+    // drives notice
+    enum class Notice {
+        None,
+        Administrator,
+        ControlPanelOnly,
+        ControlPanelOff,
+        UnmountedDrives,
+    };
     Notice pendingNotice() const;
 
     static QString unmountedDrivesNotice(int hidden);
@@ -127,6 +139,10 @@ private:
 
     // Prefers the folder's places entry, so the glyphs match the pane's
     QIcon locationIcon(const QUrl &url) const;
+
+    // Win7's Control Panel has no navigation pane, command bar, details or
+    // preview pane, and leaving it puts back whichever of them the user had
+    void setControlPanelLayout(bool controlPanel);
 
     // Placed by hand, the bar sitting behind the crumbs rather than beside them
     void layoutPathProgress();
@@ -199,7 +215,11 @@ private:
     // For the Computer view's command bar, saying so when nothing is installed
     void openSystemApplication(const QStringList &desktopNames);
 
-    void showOptionsDialog();
+    void showOptionsDialog(OptionsDialog::Tab tab);
+
+    // For a request the mode turned away, the window having gone somewhere
+    // else or stayed put
+    void showModeNotice();
 
     void showAboutDialog();
 
@@ -257,9 +277,17 @@ private:
     bool isComputerView() const;
     bool isTrashView() const;
 
+    // Like Computer the location is not a real one, and the window's file
+    // commands stand down while it shows
+    bool isControlPanelView() const;
+
     DirectoryModel *m_model = nullptr;
     ComputerModel  *m_computerModel = nullptr;
     ComputerView   *m_computerView = nullptr;
+
+    // A page of the stack like the drives, so Back and Forward move between
+    // folders and Control Panel pages in the one window as Win7's do
+    ControlPanel::View *m_controlPanelView = nullptr;
 
     // Swapping whole widgets rather than models keeps the tree bound to the
     // directory model, with no column state bleeding across and nothing to
@@ -279,6 +307,14 @@ private:
     bool m_notificationDismissed = false;
 
     Notice m_notice = Notice::None;
+
+    // Set by a navigation the mode redirected, and read by the next location
+    // shown, so the strip explains that one page and goes with the next
+    bool m_pendingModeRedirect = false;
+    bool m_modeRedirected = false;
+
+    // The mode notices' button, which opens Folder Options on the setting
+    QAction *m_changeModeAction = nullptr;
 
     // Shown while a slow directory is read, so the user sees one settled state
     // instead of rows trickling in
@@ -325,6 +361,7 @@ private:
     QHash<QObject *, QUrl> m_crumbArrows;
 
     // The command bar, and the buttons rebuilt on selection change
+    QWidget     *m_commandBar = nullptr;
     QHBoxLayout *m_commandLayout = nullptr;
     QList<QWidget *> m_contextualCommands;
 
@@ -362,6 +399,9 @@ private:
     QAction *m_actOptions = nullptr;
     QAction *m_actOpenAsAdmin = nullptr;
     QAction *m_actUseCheckBoxes = nullptr;
+
+    // Hidden with the Control Panel turned off, where it would only redirect
+    QAction *m_actGoControlPanel = nullptr;
 
     // Hidden rather than disabled in Computer, where Win7 has no such buttons
     QWidget *m_newButton = nullptr;
@@ -413,6 +453,12 @@ private:
 
     QList<QUrl> m_history;
     int         m_historyIndex = -1;
+
+    // Whether the window is laid out for the Control Panel, and what the user
+    // had showing before it was, the panes being put back on the way out
+    bool m_controlPanelLayout = false;
+    bool m_navigationPaneWasShown = true;
+    bool m_detailsPaneWasShown = true;
 
     QSoundEffect m_navSound;
 };

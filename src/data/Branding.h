@@ -12,8 +12,9 @@ namespace Branding {
 bool windowsFriendlyMode();
 void setWindowsFriendlyMode(bool on);
 
-// The system config folder is named after the OS rather than given a fixed
-// translation, and this is only meaningful in friendly mode
+// Windows rather than Linux wherever the program names the system, so the
+// Control Panel says Windows Update and, in friendly mode, the system config
+// folder is named Windows
 bool useWindowsNames();
 void setUseWindowsNames(bool on);
 

@@ -1,4 +1,5 @@
 #include "AccessDialogs.h"
+#include "MessageBoxes.h"
 
 #include "aero/icons.h"
 #include "aero/sounds.h"
@@ -40,24 +41,11 @@ bool isPermissionError(int error)
 void showFailure(QWidget *parent, const QString &title, const QString &primary,
                  const QString &secondary)
 {
-    const QIcon errorIcon =
-        Aero::themeIcon({"dialog-error", "messagebox_critical", "emblem-error"});
-    Aero::TaskDialog dialog(parent, title, errorIcon);
-
     QString reason = secondary;
     if (reason.isEmpty())
         reason = translate("Access is denied.");
 
-    dialog.addLine(Aero::bodyLabel(primary));
-    dialog.addLine(Aero::bodyLabel(reason));
-
-    QPushButton *ok = dialog.addButton(translate("OK"));
-    ok->setDefault(true);
-    QObject::connect(ok, &QPushButton::clicked, &dialog, &QDialog::accept);
-
-    dialog.lockSize(360);
-    Aero::playSound(QStringLiteral("Windows Critical Stop"));
-    dialog.exec();
+    MessageBoxes::showError(parent, title, primary, reason);
 }
 
 void showLocationUnavailable(QWidget *parent, const QString &path,

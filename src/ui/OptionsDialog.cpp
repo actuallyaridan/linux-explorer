@@ -137,7 +137,9 @@ OptionsDialog::OptionsDialog(QWidget *parent)
     // After loading, so filling the controls in does not count as a change
     const auto touched = [this] { m_apply->setEnabled(true); };
     for (QRadioButton *button : {m_sameWindow, m_ownWindow, m_singleClick,
-                                 m_doubleClick, m_namesOnly, m_namesAndContents}) {
+                                 m_doubleClick, m_modeBoth, m_modeExplorer,
+                                 m_modeControlPanel, m_namesOnly,
+                                 m_namesAndContents}) {
         connect(button, &QRadioButton::toggled, this, touched);
     }
     connect(m_includeSubfolders, &QCheckBox::toggled, this, touched);
@@ -172,10 +174,31 @@ QWidget *OptionsDialog::buildGeneralTab()
         illustrated(Aero::themeIcon({"input-mouse", "mouse"}), clickChoices));
     layout->addWidget(click);
 
+    // Ours rather than Windows', where Explorer and the Control Panel could
+    // not be had apart
+    QGroupBox *programs = group(tr("Programs"));
+    m_modeBoth = radio(tr("Explorer and Control Panel"));
+    m_modeExplorer = radio(tr("Explorer only"));
+    m_modeExplorer->setToolTip(
+        tr("Turns the Control Panel off and takes it out of the Start menu."));
+    m_modeControlPanel = radio(tr("Control Panel only"));
+    m_modeControlPanel->setToolTip(
+        tr("Takes File Explorer out of the Start menu, and windows open the "
+           "Control Panel instead of files and folders."));
+    QWidget *programChoices = column({m_modeBoth, m_modeExplorer, m_modeControlPanel});
+    programs->layout()->addWidget(
+        illustrated(Aero::themeIcon({"preferences-system"}), programChoices));
+    layout->addWidget(programs);
+
     layout->addStretch(1);
     layout->addLayout(buildRestoreDefaultsRow());
 
     return page;
+}
+
+void OptionsDialog::showTab(Tab tab)
+{
+    m_tabs->setCurrentIndex(int(tab));
 }
 
 QLayout *OptionsDialog::buildRestoreDefaultsRow()
@@ -301,16 +324,16 @@ QWidget *OptionsDialog::buildViewTab()
         tr("Shows Linux system folders under the names their Windows "
            "counterparts use, so /home reads as Users. Only the displayed "
            "name changes; every path stays what it really is."));
-    m_windowsNames = addCheck(naming, tr("Name the system folder after Windows"),
-        tr("Names the configuration folder Windows rather than Linux. Only "
-           "meaningful with the setting above on."));
+    m_windowsNames = addCheck(naming, tr("Say Windows instead of Linux"),
+        tr("Names the system Windows rather than Linux, so the Control Panel "
+           "shows Windows Update and, with the setting above on, the "
+           "configuration folder is named Windows."));
 
     m_advanced->expandAll();
     layout->addWidget(m_advanced, 1);
     layout->addLayout(buildRestoreDefaultsRow());
 
-    // The exclusivity the tree cannot express, and the dependency between the
-    // two naming rows
+    // The exclusivity the tree cannot express
     connect(m_advanced, &QTreeWidget::itemChanged, this,
             [this](QTreeWidgetItem *item, int) {
         QSignalBlocker blocker(m_advanced);
@@ -325,12 +348,6 @@ QWidget *OptionsDialog::buildViewTab()
             }
         }
 
-        if (item == m_friendlyMode) {
-            const bool on = item->checkState(0) == Qt::Checked;
-            m_windowsNames->setDisabled(!on);
-            if (!on)
-                m_windowsNames->setCheckState(0, Qt::Unchecked);
-        }
     });
 
     return page;
@@ -387,6 +404,11 @@ void OptionsDialog::load()
     m_singleClick->setChecked(single);
     m_doubleClick->setChecked(!single);
 
+    const Settings::AppMode mode = Settings::appMode();
+    m_modeBoth->setChecked(mode == Settings::AppMode::Both);
+    m_modeExplorer->setChecked(mode == Settings::AppMode::ExplorerOnly);
+    m_modeControlPanel->setChecked(mode == Settings::AppMode::ControlPanelOnly);
+
     const auto state = [](bool on) {
         return on ? Qt::Checked : Qt::Unchecked;
     };
@@ -401,7 +423,6 @@ void OptionsDialog::load()
     const bool friendly = Branding::windowsFriendlyMode();
     m_friendlyMode->setCheckState(0, state(friendly));
     m_windowsNames->setCheckState(0, state(Branding::useWindowsNames()));
-    m_windowsNames->setDisabled(!friendly);
 
     const bool contents = Settings::searchFileContents();
     m_namesAndContents->setChecked(contents);
@@ -413,6 +434,13 @@ void OptionsDialog::save()
 {
     Settings::setBrowseInNewWindow(m_ownWindow->isChecked());
     Settings::setSingleClickToOpen(m_singleClick->isChecked());
+
+    Settings::AppMode mode = Settings::AppMode::Both;
+    if (m_modeExplorer->isChecked())
+        mode = Settings::AppMode::ExplorerOnly;
+    if (m_modeControlPanel->isChecked())
+        mode = Settings::AppMode::ControlPanelOnly;
+    Settings::setAppMode(mode);
 
     const auto checked = [](QTreeWidgetItem *item) {
         return item->checkState(0) == Qt::Checked;
@@ -439,6 +467,7 @@ void OptionsDialog::restoreDefaults()
     case 0:
         m_sameWindow->setChecked(true);
         m_doubleClick->setChecked(true);
+        m_modeBoth->setChecked(true);
         break;
 
     case 1:
@@ -451,7 +480,6 @@ void OptionsDialog::restoreDefaults()
         m_notifyUnmounted->setCheckState(0, Qt::Checked);
         m_friendlyMode->setCheckState(0, Qt::Unchecked);
         m_windowsNames->setCheckState(0, Qt::Unchecked);
-        m_windowsNames->setDisabled(true);
         break;
 
     case 2:

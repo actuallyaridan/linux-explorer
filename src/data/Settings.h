@@ -85,6 +85,15 @@ void setSearchSubfolders(bool recursive);
 bool notifyUnmountedDrives();
 void setNotifyUnmountedDrives(bool notify);
 
+enum class AppMode {
+    ExplorerOnly = 0,
+    Both,
+    ControlPanelOnly,
+};
+
+AppMode appMode();
+void setAppMode(AppMode mode);
+
 // Folder Options, reset folders
 void clearRememberedViewModes();
 

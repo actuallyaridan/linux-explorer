@@ -20,6 +20,16 @@ class OptionsDialog : public QDialog {
 public:
     explicit OptionsDialog(QWidget *parent = nullptr);
 
+    // In the order they sit in the dialog
+    enum class Tab {
+        General = 0,
+        View,
+        Search,
+    };
+
+    // The Control Panel's Folder Options tasks each open on their own tab
+    void showTab(Tab tab);
+
 Q_SIGNALS:
     // Raised on Apply and OK, the window owning what a change means
     void applied();
@@ -61,6 +71,9 @@ private:
     QRadioButton *m_ownWindow = nullptr;
     QRadioButton *m_singleClick = nullptr;
     QRadioButton *m_doubleClick = nullptr;
+    QRadioButton *m_modeBoth = nullptr;
+    QRadioButton *m_modeExplorer = nullptr;
+    QRadioButton *m_modeControlPanel = nullptr;
 
     // View
     QTreeWidget *m_advanced = nullptr;

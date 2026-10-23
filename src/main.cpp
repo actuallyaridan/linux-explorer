@@ -13,6 +13,9 @@
 #include "aero/buttons.h"
 #include "aero/icons.h"
 #include "Locations.h"
+#include "MenuEntries.h"
+#include "data/control/OldSettings.h"
+#include "Settings.h"
 #include <AeroQt/stylesheet.h>
 
 // Native scroll bars rather than the theme's skinned ones
@@ -154,6 +157,10 @@ int main(int argc, char *argv[]) {
         QStringLiteral("Open each argument's parent folder with the argument "
                        "selected, instead of opening it."));
     parser.addOption(selectOption);
+    QCommandLineOption controlPanelOption(
+        QStringLiteral("control-panel"),
+        QStringLiteral("Open the Control Panel instead of a folder."));
+    parser.addOption(controlPanelOption);
     parser.addPositionalArgument(
         QStringLiteral("url"),
         QStringLiteral("Folders to open, or files to reveal with --select."),
@@ -161,7 +168,12 @@ int main(int argc, char *argv[]) {
     parser.process(app);
 
     const bool reveal = parser.isSet(selectOption);
-    const QList<QUrl> urls = urlsFrom(parser.positionalArguments());
+    QList<QUrl> urls = urlsFrom(parser.positionalArguments());
+
+    // Just another location, so it takes the same route as a folder does and
+    // a running Explorer opens it as one of its own windows
+    if (parser.isSet(controlPanelOption))
+        urls.prepend(Locations::controlPanel());
 
     // Normalised before anything else sees them, the handoff and the bus
     // interface both speaking locations, and this process's working directory
@@ -186,6 +198,13 @@ int main(int argc, char *argv[]) {
 
     Aero::registerStylesheet(&app);
     new ScrollBarUnstyler(&app);
+
+    // Once, the first time Explorer runs with the Control Panel inside it
+    ControlPanel::importOldSettings();
+
+    // Cheap when nothing is out of step, and puts the start menu right after
+    // the setting was changed some other way than through Folder Options
+    MenuEntries::apply(Settings::appMode());
 
     // The chrome has no opinion on what its icons degrade to
     Aero::setIconFallbacks({QStringLiteral("system-file-manager"),

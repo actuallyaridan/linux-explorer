@@ -206,6 +206,22 @@ void setNotifyUnmountedDrives(bool notify)
     s_notifyUnmountedDrives.set(notify);
 }
 
+AppMode appMode()
+{
+    const int stored = QSettings().value(key("AppMode"), int(AppMode::Both)).toInt();
+
+    if (stored < int (AppMode::ExplorerOnly))
+        return AppMode::Both;
+    if (stored > int(AppMode::ControlPanelOnly))
+        return AppMode::Both;
+    return AppMode(stored);
+}
+
+void setAppMode (AppMode mode)
+{
+    QSettings().setValue(key("AppMode"), int(mode));
+}
+
 void clearRememberedViewModes()
 {
     QSettings s;

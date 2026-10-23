@@ -1,0 +1,11 @@
+#!/usr/bin/env xdg-open
+[Desktop Entry]
+Name=Control Panel
+Comment=Adjust your computer's settings
+Exec=explorer --control-panel
+Icon=preferences-system
+Terminal=false
+Type=Application
+Categories=Qt;KDE;Settings;
+Keywords=control panel;settings;system;programs;uninstall;
+StartupNotify=true

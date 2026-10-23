@@ -4,7 +4,8 @@
 #include <QUrl>
 #include <QUrlQuery>
 
-// The synthetic Computer location and the search results location
+// The synthetic Computer and Control Panel locations, and the search results
+// location
 //
 // KIO has no protocol that lists a machine's drives, so the Computer location
 // is a marker rather than something it can resolve, and navigating to it swaps
@@ -20,6 +21,36 @@ inline QUrl computer()
 inline bool isComputer(const QUrl &url)
 {
     return url.scheme() == QLatin1String("computer");
+}
+
+// The Control Panel, another marker KIO knows nothing about, with the page as
+// its path, such as controlpanel:///System and Security/System, and the bare
+// root being the Control Panel's home page
+inline QUrl controlPanel(const QString &page = QString())
+{
+    QUrl url;
+    url.setScheme(QStringLiteral("controlpanel"));
+    url.setPath(QLatin1Char('/') + page);
+    return url;
+}
+
+inline bool isControlPanel(const QUrl &url)
+{
+    return url.scheme() == QLatin1String("controlpanel");
+}
+
+// The page without the slashes around it, so the home page is empty
+inline QString controlPanelPage(const QUrl &url)
+{
+    if (!isControlPanel(url))
+        return {};
+
+    QString page = url.path();
+    while (page.startsWith(QLatin1Char('/')))
+        page.remove(0, 1);
+    while (page.endsWith(QLatin1Char('/')))
+        page.chop(1);
+    return page;
 }
 
 // A recursive search of a folder, and unlike Computer this is a real KIO

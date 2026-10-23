@@ -109,6 +109,19 @@ void MenuButton::paintEvent(QPaintEvent *)
     p.drawPixmap(QPointF(arrowX, arrowY), arrow);
 }
 
+QToolButton *commandBarButton(const QIcon &icon, const QString &toolTip)
+{
+    auto *button = new QToolButton;
+    button->setCursor(Qt::PointingHandCursor);
+    // The indicator too, for a button that opens a menu
+    button->setStyleSheet(
+        QStringLiteral("QToolButton { border: none; background: transparent; }"
+                       "QToolButton::menu-indicator { image: none; }"));
+    button->setIcon(icon);
+    button->setToolTip(toolTip);
+    return button;
+}
+
 ChevronButton::ChevronButton(QWidget *parent)
     : QToolButton(parent)
 {
