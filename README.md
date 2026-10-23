@@ -1,38 +1,36 @@
 <div align="center">
 
   # linux-explorer
-  <i>The Windows 7 Explorer and Control Panel, on Linux</i>
+  <i>Windows 7's Explorer and Control Panel, on Linux</i>
 
   <p>
-    A faithful recreation of Windows 7's Explorer built with Qt6, KDE Frameworks, and <a href="https://gitgud.io/atmk/libaero-qt">libAeroQt</a>, with every file operation handled by <a href="https://invent.kde.org/frameworks/kio">KIO</a>. Best enjoyed with <a href="https://github.com/aeroshell-desktop/aerothemeplasma">AeroThemePlasma</a>.
+    This is Windows 7's Explorer rebuilt for Linux with Qt6 and KDE Frameworks. The Aero look comes from <a href="https://gitgud.io/atmk/libaero-qt">libAeroQt</a>, and all the actual file work (copying, moving, the trash and so on) is done by KDE's <a href="https://invent.kde.org/frameworks/kio">KIO</a>, the same thing Dolphin uses. The Control Panel is in here too, and just like on Windows 7 it opens inside an Explorer window. It looks best with <a href="https://github.com/aeroshell-desktop/aerothemeplasma">AeroThemePlasma</a>.
   </p>
 
 </div>
 <br>
 
 > [!WARNING]
-> **Very much a work in progress.** <br>Most things are done, but there are still things that need work. Not really daily-driveable yet.
+> **Still a work in progress.** Most of it works, but there are rough edges and it's not really ready to be your only file manager yet.
 
-## Installation
+## Installing
 
-### Arch / CachyOS (AUR)
+On Arch or CachyOS it's on the AUR:
 
 ```bash
 yay -S linux-explorer
 ```
 
-### Pre-built binaries
-
-Download the latest binary from the [Releases](https://github.com/actuallyaridan/linux-explorer/releases/latest) page and place it somewhere in your `$PATH`. It still needs Qt6, KF6 and libAeroQt installed, same as building from source, but skips the compile:
+If you'd rather not compile anything, grab the binary from the [Releases](https://github.com/actuallyaridan/linux-explorer/releases/latest) page. You still need Qt6, KF6 and libAeroQt installed for it to run.
 
 ```bash
 chmod +x explorer-x86_64
 sudo mv explorer-x86_64 /usr/local/bin/explorer
 ```
 
-## Building
+## Building it yourself
 
-Built for CachyOS / Arch. Other distros should work given Qt6, KF6 and libAeroQt.
+It's made on CachyOS, but any distro with Qt6, KF6 and libAeroQt should work.
 
 ```bash
 sudo pacman -S qt6-base qt6-multimedia cmake kio kcoreaddons kwidgetsaddons kwindowsystem kio-extras libcups openssl zlib
@@ -41,76 +39,74 @@ cmake --build build -j
 ./build/explorer
 ```
 
-You'll also need `libAeroQt.so` on your system, built from [libaero-qt](https://gitgud.io/atmk/libaero-qt).
+You'll also need libAeroQt. Build and install it from [libaero-qt](https://gitgud.io/atmk/libaero-qt) first.
 
-### Optional packages
+### Optional dependencies
 
-Everything below is checked for at runtime. Without one, the feature it backs is hidden or falls back rather than failing.
+You don't need these, but some features won't work without them:
 
-| Package | What it gives you |
-|---------|-------------------|
-| `kio-extras` | Real search behind the search box, and archives that open as folders |
-| `kio-admin` | "Open as Administrator", this desktop's version of the UAC prompt |
-| `ark` | Send to → Compressed (zipped) folder |
-| `ffmpegthumbs`, `kdegraphics-thumbnailers` | Thumbnails for video, PDF and RAW |
-| `kdenetwork-filesharing` | Samba browsing behind Map network drive |
-| `polkit` | Installing and uninstalling programs from the Control Panel's Programs and Features |
-| `yay` | Reinstalling AUR programs from Programs and Features |
-| `ufw` | Firewall status and rules on the Control Panel's Firewall page |
+`kio-extras` for searching subfolders and opening zip files like folders\
+`kio-admin` for Open as Administrator\
+`ark` for Send to > Compressed (zipped) folder\
+`ffmpegthumbs` and `kdegraphics-thumbnailers` for video, PDF and RAW thumbnails\
+`kdenetwork-filesharing` for browsing Samba shares\
+`polkit` for uninstalling programs from the Control Panel\
+`yay` for reinstalling AUR programs from the Control Panel\
+`ufw` for the Control Panel's Firewall page
 
-## Control Panel
-
-The Windows 7 Control Panel is part of Explorer, the way it is on Windows: it opens in an Explorer window, with the same address bar and back button, and it has its own Start menu entry. Open it with **Open Control Panel** in Computer, by typing `Control Panel` into the address bar, or with:
+Everything except yay is in the official repos:
 
 ```bash
-explorer --control-panel
+sudo pacman -S --needed kio-extras kio-admin ark ffmpegthumbs kdegraphics-thumbnailers kdenetwork-filesharing polkit ufw
 ```
 
-It shows real system data: Linux Update checks and installs through `pacman`, Installed Updates reads `pacman.log`, Programs and Features lists and uninstalls packages, and the Performance page runs a Windows Experience Index style benchmark. Some pages are still placeholders.
+## The Control Panel
+
+Click **Open Control Panel** in Computer, type `Control Panel` into the address bar, or use the Control Panel entry in your Start menu.
+
+Most pages show real info from your system. Linux Update checks for and installs updates with pacman, Programs and Features lists your programs and can uninstall them, and the Performance page has its own version of the Windows Experience Index. A few pages are still placeholders.
 
 > [!NOTE]
-> Linux Update and Programs and Features depend on `pacman`, so on distributions other than Arch they won't work yet.
+> Linux Update and Programs and Features use pacman, so they only work on Arch-based distros for now.
 
-Under **Organize → Folder and search options → General → Programs** you can keep both, use Explorer only (the Control Panel is turned off and leaves the Start menu), or use the Control Panel only (File Explorer leaves the Start menu, and windows stay on the Control Panel).
+If you don't want the Control Panel, go to **Organize > Folder and search options** and pick **Explorer only** under **Programs**. That turns it off and takes it out of the Start menu. You can also go the other way with **Control Panel only**.
 
-### Being the system's file manager
+## Making it your default file manager
 
-Explorer answers `org.freedesktop.FileManager1`, which is what every "Open Containing Folder" in the desktop calls. Dolphin ships a service file for the same name and usually gets there first, so hand it over for your user:
+When another app wants to show a file in its folder, it asks whichever file manager owns `org.freedesktop.FileManager1`. That's usually Dolphin. To give it to Explorer instead:
 
 ```bash
 mkdir -p ~/.local/share/dbus-1/services && cp dbus/org.freedesktop.FileManager1.service ~/.local/share/dbus-1/services/
 xdg-mime default linux-explorer.desktop inode/directory
 ```
 
-## Why not a fork of Dolphin?
+## Keyboard shortcuts
 
-The hard part of a file manager is KIO: overwrite and conflict resolution, permissions, cross-device copies, restorable trash, cancellable progress and undo. Dolphin links against it directly, and so does this project. `src/model/FileOps.cpp` is a thin facade over KIO jobs, and nothing in this repository reads or writes file contents itself.
-
-What's left is the Windows 7 look and feel, which is the part worth building from scratch rather than skinning on top of Dolphin's own UI.
-
-### Keyboard
-
-| Key | Does |
-|-----|------|
+| Key | What it does |
+|-----|--------------|
 | <kbd>Ctrl</kbd>+<kbd>L</kbd>, <kbd>Alt</kbd>+<kbd>D</kbd>, <kbd>F4</kbd> | Edit the address bar |
-| <kbd>Ctrl</kbd>+<kbd>E</kbd>, <kbd>Ctrl</kbd>+<kbd>F</kbd>, <kbd>F3</kbd> | Search box |
-| <kbd>Backspace</kbd>, <kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>Alt</kbd>+<kbd>↑</kbd> | Back / up one level |
+| <kbd>Ctrl</kbd>+<kbd>E</kbd>, <kbd>Ctrl</kbd>+<kbd>F</kbd>, <kbd>F3</kbd> | Jump to the search box |
+| <kbd>Backspace</kbd>, <kbd>Alt</kbd>+<kbd>Left</kbd> / <kbd>Alt</kbd>+<kbd>Up</kbd> | Back / up one folder |
 | <kbd>F2</kbd> / <kbd>F5</kbd> / <kbd>F11</kbd> | Rename / refresh / full screen |
-| <kbd>F6</kbd> / <kbd>Shift</kbd>+<kbd>F6</kbd> | Cycle panes |
-| <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd>..<kbd>8</kbd> | View modes, or <kbd>Ctrl</kbd>+wheel |
+| <kbd>F6</kbd> / <kbd>Shift</kbd>+<kbd>F6</kbd> | Move between panes |
+| <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd>..<kbd>8</kbd> | Change the view, or <kbd>Ctrl</kbd>+scroll |
 | <kbd>Alt</kbd>+<kbd>P</kbd> / <kbd>Alt</kbd>+<kbd>Enter</kbd> | Preview pane / properties |
 
-### Command line
+## Command line
 
 ```bash
 explorer ~/Documents          # open a folder
-explorer --select ~/a.txt     # open its folder with the file selected
+explorer --select ~/a.txt     # open the folder with a.txt selected
 explorer --control-panel      # open the Control Panel
 ```
 
-## Part of the WSL (Windows-alike Software for Linux) series
+## Why not just fork Dolphin?
 
-Why don't you also check out the other ones?
+The hard part of a file manager is everything under the hood: copying between drives, handling conflicts and permissions, the trash, undo. KDE's KIO already does all of that well, and it's what Dolphin uses too. So this project uses KIO directly and puts its effort into the Windows 7 look and feel instead. `src/model/FileOps.cpp` is basically a thin wrapper around KIO, and nothing in here reads or writes your files by itself.
+
+## The rest of the WSL series
+
+WSL here stands for Windows-alike Software for Linux. Check out the others too:
 
 - [Linux Device Manager](https://github.com/actuallyaridan/linux-devmgmt)
 - [Linux Minesweeper](https://github.com/actuallyaridan/linux-minesweeper)
