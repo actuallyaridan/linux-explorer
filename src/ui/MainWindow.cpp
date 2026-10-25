@@ -1316,11 +1316,13 @@ void MainWindow::setControlPanelLayout(bool controlPanel)
     m_previewPane->setVisible(!controlPanel && m_actPreviewPane->isChecked());
 
     // Explorer's application icon is the file manager's, so the Control Panel
-    // sets its own, and an empty icon falls back to the application's again
+    // sets its own, and the application's is set back by name rather than
+    // with an empty icon, which the title bar reads as "use the application's"
+    // but every dialog opened from this window inherits as no icon at all
     if (controlPanel)
         setWindowIcon(Aero::themeIcon({"preferences-system"}));
     else
-        setWindowIcon(QIcon());
+        setWindowIcon(QApplication::windowIcon());
 }
 
 void MainWindow::clearPathLayout()

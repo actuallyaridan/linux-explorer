@@ -1,5 +1,6 @@
 #include "AboutDialog.h"
 
+#include <QApplication>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -14,7 +15,7 @@ constexpr int kDialogWidth = 340;
 constexpr int kIconSize = 64;
 
 // The version this box reports, which is not the one the command line prints
-const char *const kVersion = "Version: 1.2";
+const char *const kVersion = "Version: 2.0";
 
 } // namespace
 
@@ -27,7 +28,9 @@ AboutDialog::AboutDialog(QWidget *parent)
 
     auto *iconLabel = new QLabel;
     iconLabel->setFixedSize(kIconSize, kIconSize);
-    iconLabel->setPixmap(windowIcon().pixmap(kIconSize, kIconSize));
+    // The application's rather than the window's, which a Control Panel
+    // window sets to its own
+    iconLabel->setPixmap(QApplication::windowIcon().pixmap(kIconSize, kIconSize));
     iconLabel->setAlignment(Qt::AlignCenter);
 
     auto *nameLabel = new QLabel(QStringLiteral("File Explorer"));
