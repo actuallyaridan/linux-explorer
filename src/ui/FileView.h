@@ -154,14 +154,6 @@ private:
     bool m_checkBoxes = false;
     bool m_singleClick = false;
 
-    // How far an inline rename has got: Normal when there is none, Locked
-    // while the editor is open, and Renaming once the new name was handed on
-    enum class RenameState : quint8 {
-        Normal,
-        Locked,
-        Renaming,
-    };
-    RenameState m_renameState = RenameState::Normal;
     QUrl m_destination;
 
     // So switching a column on later does not reset every other width

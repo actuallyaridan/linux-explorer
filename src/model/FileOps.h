@@ -38,6 +38,8 @@ public:
 
 Q_SIGNALS:
     void finishRename(const QUrl &url);
+
+    void finishRenameBatch(const QList<QUrl> &urls);
 };
 
 static GlobalRenameContext GLOBAL_RENAME_CONTEXT;

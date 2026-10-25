@@ -21,6 +21,7 @@ find_package(KF6CoreAddons REQUIRED)
 # KConfig reads and writes the desktop's own config files in their format
 find_package(KF6Config REQUIRED)
 find_package(KF6WidgetsAddons REQUIRED)
+find_package(KF6IconThemes REQUIRED)
 find_package(KF6WindowSystem REQUIRED)
 # Solid knows a places entry's block device, which stands in for a drive letter
 find_package(KF6Solid REQUIRED)
@@ -130,6 +131,7 @@ target_link_libraries(explorer PRIVATE
     KF6::CoreAddons
     KF6::WidgetsAddons
     KF6::WindowSystem
+    KF6::IconThemes
     KF6::Solid
     AeroQt
     Qt6::OpenGL

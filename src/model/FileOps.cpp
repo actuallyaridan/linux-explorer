@@ -246,7 +246,14 @@ class RenameInstance
 public:
     RenameInstance(QWidget *window, const QUrl &fallbackPath)
         : m_window(window)
-        , m_firstPath(fallbackPath)
+        , m_renamedPaths()
+    {
+        m_renamedPaths.append(fallbackPath);
+    }
+
+    RenameInstance(QWidget *window, const QList<QUrl> &fallbackPaths)
+        : m_window(window)
+        , m_renamedPaths(fallbackPaths)
     {
     }
 
@@ -255,9 +262,15 @@ public:
         return m_context;
     }
 
-    QUrl firstPath() const
+    QUrl renamedPath() const
     {
-        return m_firstPath;
+        Q_ASSERT((m_renamedPaths.length() == 1));
+        return m_renamedPaths.value(0);
+    }
+
+    QList<QUrl> renamedPaths() const
+    {
+        return m_renamedPaths;
     }
 
     // Null when there is nothing to do, the name being empty or unchanged
@@ -280,10 +293,15 @@ public:
                          [this](KIO::Job *finished, const QUrl &, const QUrl &newPath,
                                 const QDateTime &, bool, bool) {
             const bool cancelled = finished->error() == KIO::ERR_USER_CANCELED;
-            if (!cancelled && !m_pathSet) {
-                m_firstPath = newPath;
-                m_pathSet = true;
+            if (cancelled)
+                return;
+
+            if (!m_initialized) {
+                m_renamedPaths.clear();
+                m_initialized = true;
             }
+
+            m_renamedPaths.append(newPath);
         });
 
         job->setUiDelegate(delegateFor(m_window));
@@ -296,8 +314,8 @@ public:
 private:
     QWidget *m_window = nullptr;
     QObject *m_context = nullptr;
-    QUrl m_firstPath;
-    bool m_pathSet = false;
+    QList<QUrl> m_renamedPaths;
+    bool m_initialized = false;
 };
 
 struct RenameStep {
@@ -325,7 +343,7 @@ bool renameChain(RenameInstance *instance, QList<RenameStep> steps)
         if (!cancelled && renameChain(instance, steps))
             return;
 
-        Q_EMIT GLOBAL_RENAME_CONTEXT.finishRename(instance->firstPath());
+        Q_EMIT GLOBAL_RENAME_CONTEXT.finishRenameBatch(instance->renamedPaths());
         delete instance;
     });
 
@@ -336,13 +354,16 @@ bool renameChain(RenameInstance *instance, QList<RenameStep> steps)
 
 bool rename(const QUrl &url, const QString &newName, QWidget *window)
 {
-    RenameInstance instance(window, url);
-    KIO::CopyJob *job = instance.startRename(url, newName);
-    if (!job)
+    auto *instance = new RenameInstance(window, url);
+    KIO::CopyJob *job = instance->startRename(url, newName);
+    if (!job) {
+        delete instance;
         return false;
+    }
 
-    QObject::connect(job, &KJob::result, instance.context(), [instance](KJob *) {
-        Q_EMIT GLOBAL_RENAME_CONTEXT.finishRename(instance.firstPath());
+    QObject::connect(job, &KJob::result, instance->context(), [instance](KJob *) {
+        Q_EMIT GLOBAL_RENAME_CONTEXT.finishRename(instance->renamedPath());
+        delete instance;
     });
     return true;
 }
@@ -355,10 +376,8 @@ bool renameBatch(const QList<KFileItem> &items, const QString &baseName,
     if (baseName.isEmpty())
         return false;
 
-    const QUrl firstUrl = items.first().url();
-
     if (items.size() == 1)
-        return rename(firstUrl, baseName, window);
+        return rename(items.first().url(), baseName, window);
 
     // The editor is prefilled with one file's real name, so an unchanged
     // commit still carries its extension and every file would end up with two
@@ -371,11 +390,16 @@ bool renameBatch(const QList<KFileItem> &items, const QString &baseName,
             stem.chop(firstSuffix.size());
     }
 
+    QList<QUrl> fallbackPaths;
+    fallbackPaths.reserve(items.size());
+
     // Windows numbers from one, before the extension
     QList<RenameStep> steps;
     steps.reserve(items.size());
     int counter = 1;
     for (const KFileItem &item : items) {
+        fallbackPaths.append(item.url());
+
         const QString name = item.name();
         const int dot = name.lastIndexOf(QLatin1Char('.'));
         const bool keepsExtension = dot > 0 && !item.isDir();
@@ -389,7 +413,7 @@ bool renameBatch(const QList<KFileItem> &items, const QString &baseName,
         ++counter;
     }
 
-    auto *instance = new RenameInstance(window, firstUrl);
+    auto *instance = new RenameInstance(window, fallbackPaths);
     if (!renameChain(instance, steps)) {
         delete instance;
         return false;

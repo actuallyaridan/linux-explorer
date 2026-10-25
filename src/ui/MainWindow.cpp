@@ -1372,7 +1372,13 @@ void MainWindow::beginPathEdit()
     // typed text reaches it
     auto *fsModel = new QFileSystemModel(m_pathEdit);
     fsModel->setRootPath(QStringLiteral("/"));
-    fsModel->setFilter(QDir::Dirs | QDir::Drives | QDir::NoDotAndDotDot);
+
+    auto fsModelFilter = QDir::Dirs | QDir::Drives | QDir::NoDotAndDotDot;
+
+    if (m_model->showHiddenFiles())
+        fsModelFilter |= QDir::Hidden;
+
+    fsModel->setFilter(fsModelFilter);
     auto *completer = new QCompleter(fsModel, m_pathEdit);
     completer->setCompletionMode(QCompleter::PopupCompletion);
     completer->setCaseSensitivity(Qt::CaseInsensitive);
@@ -2039,6 +2045,10 @@ QWidget *MainWindow::buildBody()
     connect(&FileOps::GLOBAL_RENAME_CONTEXT, &FileOps::GlobalRenameContext::finishRename,
             this, [this](const QUrl &newUrl) {
         m_fileView->selectUrl(newUrl);
+    });
+    connect(&FileOps::GLOBAL_RENAME_CONTEXT, &FileOps::GlobalRenameContext::finishRenameBatch,
+            this, [this](const QList<QUrl> &newUrls) {
+        m_fileView->selectUrls(newUrls);
     });
 
     m_computerView = new ComputerView(m_computerModel);
