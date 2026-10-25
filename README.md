@@ -10,9 +10,6 @@
 </div>
 <br>
 
-> [!WARNING]
-> **Still a work in progress.** Most of it works, but there are rough edges and it's not really ready to be your only file manager yet.
-
 ## Installing
 
 On Arch or CachyOS it's on the AUR:
