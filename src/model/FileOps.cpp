@@ -1,6 +1,7 @@
 #include "FileOps.h"
 #include "AccessDialogs.h"
 #include "FileProgressDialog.h"
+#include "PropertiesDialog.h"
 
 #include <KIO/ApplicationLauncherJob>
 #include <KIO/AskUserActionInterface>
@@ -26,9 +27,11 @@
 
 #include <QApplication>
 #include <QClipboard>
+#include <QDir>
 #include <QMimeData>
 #include <QProcess>
 #include <QStandardPaths>
+#include <QStorageInfo>
 #include <QStringList>
 #include <functional>
 
@@ -627,6 +630,23 @@ void showProperties(const QList<KFileItem> &items, QWidget *window)
 {
     if (items.isEmpty())
         return;
+
+    // Ours covers a single local file or folder so far, and a drive's root
+    // keeps KDE's until it has Win7's pie chart, everything else going to KDE
+    if (items.size() == 1) {
+        const KFileItem &item = items.first();
+        const QString path = item.localPath();
+        const bool isLocal = item.url().isLocalFile();
+        const bool isDriveRoot =
+            QStorageInfo(path).rootPath() == QDir::cleanPath(path);
+
+        if (isLocal && !isDriveRoot) {
+            auto *dialog = new PropertiesDialog(item, window);
+            dialog->setAttribute(Qt::WA_DeleteOnClose);
+            dialog->show();
+            return;
+        }
+    }
 
     auto *dialog = new KPropertiesDialog(KFileItemList(items), window);
     dialog->setAttribute(Qt::WA_DeleteOnClose);

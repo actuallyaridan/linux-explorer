@@ -64,6 +64,7 @@ add_executable(explorer
     src/ui/MessageBoxes.cpp
     src/ui/MountDialog.cpp
     src/ui/OptionsDialog.cpp
+    src/ui/PropertiesDialog.cpp
     src/ui/MainWindow.cpp
     src/ui/NavigationPane.cpp
     src/ui/PreviewPane.cpp

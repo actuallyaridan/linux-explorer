@@ -83,6 +83,9 @@ namespace {
 // The gap Win7 leaves between the navigation pane and the file list
 constexpr int kListLeftMargin = 8;
 
+// The width of the search box
+constexpr int kSearchBoxWidth = 240;
+
 // Long enough that ordinary local folders never show the placeholder at all
 constexpr int kLoadingPlaceholderDelay = 400;
 
@@ -1123,7 +1126,6 @@ void MainWindow::buildNavigationBar()
     // Taken by reference, so the menu has to be a named variable
     navBtns->setMenu(recentMenu);
     navBtns->menuButton()->setToolTip(tr("Recent locations"));
-    layout->addSpacing(4);
 
     // On the theme's glass texture so the box matches the search field, and
     // scoped by name so the child labels are unaffected
@@ -1192,14 +1194,14 @@ void MainWindow::buildNavigationBar()
     refreshButton->setCursor(Qt::ArrowCursor);
     pathBoxLayout->addWidget(refreshButton);
     connect(refreshButton, &QToolButton::clicked, this, &MainWindow::refresh);
-    layout->addSpacing(6);
+    layout->addSpacing(2);
 
     // The crumb bar is marked transparent by the inset call, so the theme gives
     // a plain text field a glass background that a border of our own would
     // override, and focus swaps to solid white since there is no glass for it
     m_searchBox = new QLineEdit;
     m_searchBox->setPlaceholderText(tr("Search"));
-    m_searchBox->setFixedWidth(190);
+    m_searchBox->setFixedWidth(kSearchBoxWidth);
     m_searchBox->setFixedHeight(24);
     m_searchBox->setClearButtonEnabled(false);
     // The Win7 glyph comes first, with the standard name as the fallback
@@ -1490,6 +1492,11 @@ void MainWindow::setCrumbTrail(const QUrl &url)
                 [this, target] { navigateTo(target); });
         m_pathLayout->addWidget(link);
     }
+
+    // Win7 ends the trail with one more arrow, which drops the folders
+    // inside the one on show
+    if (!crumbs.isEmpty())
+        addArrow(crumbs.last().target);
 
     m_pathLayout->addStretch();
 }
