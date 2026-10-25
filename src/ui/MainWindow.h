@@ -205,6 +205,11 @@ private:
     // does not leave the window waiting forever
     void applyPendingSelection(bool listingFinished);
 
+    // Renamed items are selected together once all of them are listed under
+    // their new names, see selectRenamed() in the .cpp
+    void selectRenamed(const QList<QUrl> &urls);
+    void selectRenamedIfListed();
+
     void renameSelection();
     void applyRename(const QUrl &url, const QString &newName);
     void createNewFolder();
@@ -424,6 +429,9 @@ private:
     // when they are asked for
     QList<QUrl> m_pendingSelection;
     bool m_pendingRename = false;
+
+    // What a rename just finished with, until every one of them is listed
+    QList<QUrl> m_awaitingRenamed;
 
     // A rename edits one item and commits its text as the base name for all of
     // them, so the rest are remembered from the moment the editor opened

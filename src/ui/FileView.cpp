@@ -5,8 +5,11 @@
 #include "aero/listview.h"
 #include "aero/palette.h"
 
+#include <KConfigGroup>
 #include <KFilePreviewGenerator>
 #include <KIO/Global>
+#include <KIO/PreviewJob>
+#include <KSharedConfig>
 
 #include <QAbstractProxyModel>
 #include <QApplication>
@@ -45,6 +48,21 @@ constexpr int kCheckMargin = 2;
 
 // Long enough that dragging across a folder on the way past does not open it
 constexpr int kSpringLoadDelay = 700;
+
+// Every thumbnailer KDE turns on by default, videos among them, unless
+// explorerrc names its own
+//
+// Without this the previews fall back to images and folders alone, the rest
+// being something Dolphin switches on in its own settings, which Explorer
+// does not read. The icon views only, since a slow video thumbnail started
+// for the details view could land after switching to icons and leave a 16px
+// picture where a large one belongs
+QStringList previewPlugins()
+{
+    const KConfigGroup group(KSharedConfig::openConfig(),
+                             QStringLiteral("PreviewSettings"));
+    return group.readEntry("Plugins", KIO::PreviewJob::defaultPlugins());
+}
 
 // A 48px icon with three lines, and a 32px icon with two
 constexpr int kTileWidth = 280;
@@ -503,7 +521,14 @@ protected:
         m_band->show();
 
         selectionModel()->select(m_initial, QItemSelectionModel::ClearAndSelect);
-        setSelection(rect, QItemSelectionModel::Select | QItemSelectionModel::Rows);
+
+        // Qt finds the rows from the band's corners, and a corner out in the
+        // empty space past the last column or the last row finds no row,
+        // which it takes as running to the end and selects every row below
+        // the start, so the band is cut down to where the rows are first
+        const QRect covered = rect.intersected(rowsArea());
+        if (!covered.isEmpty())
+            setSelection(covered, QItemSelectionModel::Select | QItemSelectionModel::Rows);
     }
 
     void mouseReleaseEvent(QMouseEvent *event) override
@@ -518,6 +543,28 @@ protected:
     }
 
 private:
+    // From the first row's top to the last visible row's bottom, and across
+    // the columns, in viewport coordinates
+    QRect rowsArea() const
+    {
+        const int rows = model() ? model()->rowCount() : 0;
+        if (rows == 0)
+            return {};
+
+        // The last row on screen, inside the last group when grouped
+        QModelIndex last = model()->index(rows - 1, 0);
+        while (isExpanded(last) && model()->rowCount(last) > 0) {
+            const int children = model()->rowCount(last);
+            last = model()->index(children - 1, 0, last);
+        }
+
+        const int top = visualRect(model()->index(0, 0)).top();
+        const int bottom = visualRect(last).bottom();
+        const int left = -header()->offset();
+        const int right = left + header()->length() - 1;
+        return QRect(QPoint(left, top), QPoint(right, bottom));
+    }
+
     QRubberBand *m_band = nullptr;
     QItemSelection m_initial;
     QPoint m_origin;
@@ -705,6 +752,7 @@ void FileView::buildIconView()
     });
 
     m_iconPreviews = new KFilePreviewGenerator(m_icons);
+    m_iconPreviews->setEnabledPlugins(previewPlugins());
     m_iconPreviews->setPreviewShown(false);
 
     m_stack->addWidget(m_icons);
@@ -867,6 +915,15 @@ void FileView::applyMode()
     const int iconSize = Settings::iconSizeFor(m_mode);
     const bool details = (m_mode == Settings::ViewMode::Details);
 
+    // The size goes in before previews are switched on, since KDE quietly
+    // ignores switching them on for a view with no icon size yet, which left
+    // a window opening straight into an icon view without thumbnails until
+    // something resized it
+    if (details)
+        m_details->setIconSize(QSize(iconSize, iconSize));
+    else
+        m_icons->setIconSize(QSize(iconSize, iconSize));
+
     // Only the view on show generates previews
     m_detailsPreviews->setPreviewShown(details);
     m_iconPreviews->setPreviewShown(!details);
@@ -875,13 +932,11 @@ void FileView::applyMode()
         auto *delegate = static_cast<ItemDelegate *>(m_details->itemDelegate());
         delegate->setCheckBoxes(m_checkBoxes, true);
         m_stack->setCurrentWidget(m_details);
-        m_details->setIconSize(QSize(iconSize, iconSize));
         repositionMessage();
         return;
     }
 
     m_stack->setCurrentWidget(m_icons);
-    m_icons->setIconSize(QSize(iconSize, iconSize));
 
     auto *delegate = static_cast<ItemDelegate *>(m_icons->itemDelegate());
 

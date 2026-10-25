@@ -460,6 +460,8 @@ MainWindow::MainWindow(const QUrl &startUrl, QWidget *parent)
         m_loading = true;
         m_lastLoadFailed = false;
         invalidateSelection();
+        // A rename finishing in some other folder has nothing to select here
+        m_awaitingRenamed.clear();
 
         // The page swaps in at once and only the label waits, since leaving the
         // list up means watching the batches trickle in and only then being
@@ -2044,12 +2046,12 @@ QWidget *MainWindow::buildBody()
     });
     connect(&FileOps::GLOBAL_RENAME_CONTEXT, &FileOps::GlobalRenameContext::finishRename,
             this, [this](const QUrl &newUrl) {
-        m_fileView->selectUrl(newUrl);
+        selectRenamed({newUrl});
     });
     connect(&FileOps::GLOBAL_RENAME_CONTEXT, &FileOps::GlobalRenameContext::finishRenameBatch,
-            this, [this](const QList<QUrl> &newUrls) {
-        m_fileView->selectUrls(newUrls);
-    });
+            this, &MainWindow::selectRenamed);
+    connect(m_model, &DirectoryModel::itemsRenamed,
+            this, &MainWindow::selectRenamedIfListed);
 
     m_computerView = new ComputerView(m_computerModel);
     connect(m_computerView, &ComputerView::urlActivated, this, &MainWindow::navigateTo);
@@ -3281,6 +3283,30 @@ void MainWindow::applyPendingSelection(bool listingFinished)
     // hijacks the user's next selection
     if (listingFinished)
         m_pendingSelection.clear();
+}
+
+void MainWindow::selectRenamed(const QList<QUrl> &urls)
+{
+    // The lister hears of each rename a moment after its job has ended, so the
+    // last few can still be listed under their old names here, and they are
+    // all selected in one go once they are not, since selecting a second
+    // batch replaces the first rather than adding to it
+    m_awaitingRenamed = urls;
+    selectRenamedIfListed();
+}
+
+void MainWindow::selectRenamedIfListed()
+{
+    if (m_awaitingRenamed.isEmpty())
+        return;
+
+    for (const QUrl &url : std::as_const(m_awaitingRenamed)) {
+        if (!m_model->indexForUrl(url).isValid())
+            return;
+    }
+
+    m_fileView->selectUrls(m_awaitingRenamed);
+    m_awaitingRenamed.clear();
 }
 
 void MainWindow::renameSelection()

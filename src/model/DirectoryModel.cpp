@@ -6,7 +6,6 @@
 #include <KDirLister>
 #include <KDirModel>
 #include <KDirSortFilterProxyModel>
-#include <KIconLoader>
 #include <KIO/Global>
 #include <KIO/Job>
 #include <KIO/Paste>
@@ -74,12 +73,17 @@ public:
     explicit Win7ColumnProxy(QObject *parent = nullptr)
         : KDirSortFilterProxyModel(parent)
         , m_columns(defaultColumns())
-        , m_nonEmptyFolderIcon()
     {
-        m_nonEmptyFolderIcon.addFile(":/win7-icons/non-empty-folder-16.png", QSize(16, 16));
-        m_nonEmptyFolderIcon.addFile(":/win7-icons/non-empty-folder-32.png", QSize(32, 32));
-        m_nonEmptyFolderIcon.addFile(":/win7-icons/non-empty-folder-48.png", QSize(48, 48));
-        m_nonEmptyFolderIcon.addFile(":/win7-icons/non-empty-folder-256.png", QSize(256, 256));
+        m_nonEmptyFolderIcon.addFile(QStringLiteral(":/win7-icons/non-empty-folder-16.png"), QSize(16, 16));
+        m_nonEmptyFolderIcon.addFile(QStringLiteral(":/win7-icons/non-empty-folder-32.png"), QSize(32, 32));
+        m_nonEmptyFolderIcon.addFile(QStringLiteral(":/win7-icons/non-empty-folder-48.png"), QSize(48, 48));
+        m_nonEmptyFolderIcon.addFile(QStringLiteral(":/win7-icons/non-empty-folder-256.png"), QSize(256, 256));
+
+        // Opening a folder or refreshing one resets the model, which is when
+        // the folders shown may have gained or lost what is in them
+        connect(this, &QAbstractItemModel::modelReset, this, [this] {
+            m_folderHasContents.clear();
+        });
 
         // From the clipboard rather than our own cut, since another file
         // manager's cut has to ghost these items too
@@ -121,20 +125,25 @@ public:
         return KDirSortFilterProxyModel::filterAcceptsRow(sourceRow, sourceParent);
     }
 
-    // Sorts on the displayed name, or the rows come out alphabetical by their
-    // real ones and nonsense on screen, and folders first still comes from the
-    // base class, applied before it delegates here
+    // Folders go before files here, since the base class does that inside
+    // this same function, so it never got the chance once the name compare
+    // below returned first. Left unflipped for a descending sort, so the whole
+    // list reverses and folders end up last, as Win7 has them
+    //
+    // Names are compared as displayed, or the rows come out alphabetical by
+    // their real names and nonsense on screen
     bool subSortLessThan(const QModelIndex &left, const QModelIndex &right) const override
     {
-        if (left.column() != KDirModel::Name)
-            return KDirSortFilterProxyModel::subSortLessThan(left, right);
-
         const KFileItem leftItem = fileItem(left);
         const KFileItem rightItem = fileItem(right);
-        if (leftItem.isNull() || rightItem.isNull())
-            return KDirSortFilterProxyModel::subSortLessThan(left, right);
-        else if (leftItem.isDir() != rightItem.isDir())
+        const bool bothItems = !leftItem.isNull() && !rightItem.isNull();
+
+        const bool oneIsFolder = bothItems && leftItem.isDir() != rightItem.isDir();
+        if (oneIsFolder && sortFoldersFirst())
             return leftItem.isDir();
+
+        if (left.column() != KDirModel::Name || !bothItems)
+            return KDirSortFilterProxyModel::subSortLessThan(left, right);
 
         const QString leftName = displayName(leftItem);
         const QString rightName = displayName(rightItem);
@@ -167,28 +176,23 @@ public:
             const bool ghosted = item.isHidden()
                 || Branding::isSystemFolder(item.url().toLocalFile());
             const bool faded = cut || ghosted;
+            const bool showsContents = hasContents(item);
 
-            bool nonEmptyDir = item.isDir()
-                && item.currentMimeType().name() == QLatin1String("inode/directory");
-
-            if (nonEmptyDir) {
-                QDir dirContents(item.localPath());
-
-                dirContents.setFilter(QDir::Hidden | QDir::Files);
-
-                nonEmptyDir = (dirContents.exists(QLatin1String(".directory"))) ? false : !dirContents.isEmpty();
-            }
-
-            if (faded || nonEmptyDir) {
-                const QIcon icon = (nonEmptyDir) ? m_nonEmptyFolderIcon : KDE::icon(item.iconName(), KIconLoader::global());
-
-                if (!icon.isNull()) {
-                    if (faded) {
-                        const qreal opacity = cut ? kCutIconOpacity : kHiddenIconOpacity;
-                        return fadedIcon(icon, opacity, cut);
-                    } else
-                        return icon;
+            if (faded || showsContents) {
+                // The model's own icon unless the folder swaps it, so the
+                // emblems it carries, a link's arrow among them, survive
+                QIcon icon = m_nonEmptyFolderIcon;
+                if (!showsContents) {
+                    const QVariant base = KDirSortFilterProxyModel::data(index, role);
+                    icon = qvariant_cast<QIcon>(base);
                 }
+
+                if (!icon.isNull() && faded) {
+                    const qreal opacity = cut ? kCutIconOpacity : kHiddenIconOpacity;
+                    return fadedIcon(icon, opacity, cut);
+                }
+                if (!icon.isNull())
+                    return icon;
             }
         }
 
@@ -315,6 +319,42 @@ private:
         }
     }
 
+    // Win7 draws a folder with something in it as a folder with papers inside
+    //
+    // Only for the plain folder icon, so the special folders and a folder
+    // given its own icon keep theirs, and only for local folders, a remote
+    // one having no path to look in and a network mount being too slow to
+    // look in while painting
+    bool hasContents(const KFileItem &item) const
+    {
+        if (!item.isDir() || item.isLink())
+            return false;
+
+        // KDE names the plain folder after its type, and some versions after
+        // the icon itself
+        const QString iconName = item.iconName();
+        const bool plainFolder = iconName == QLatin1String("inode-directory")
+            || iconName == QLatin1String("folder");
+        if (!plainFolder)
+            return false;
+        if (!item.url().isLocalFile() || item.isSlow())
+            return false;
+
+        // Asked once per folder rather than on every repaint, which would
+        // read the disk for each visible folder whenever the view scrolls
+        const QUrl url = item.url();
+        const auto cached = m_folderHasContents.constFind(url);
+        if (cached != m_folderHasContents.constEnd())
+            return cached.value();
+
+        // What Explorer would show, so a folder holding only hidden files
+        // still looks empty, and subfolders count as much as files do
+        const QDir folder(item.localPath());
+        const bool hasAny = !folder.isEmpty(QDir::AllEntries | QDir::NoDotAndDotDot);
+        m_folderHasContents.insert(url, hasAny);
+        return hasAny;
+    }
+
     // The cache is a requirement rather than an optimisation, this running for
     // every visible cell on every repaint, and it is keyed on the icon's own
     // contents rather than its name, which is shared by every file of a MIME
@@ -360,6 +400,7 @@ private:
     QSet<QUrl> m_cutUrls;
     mutable QHash<QString, QIcon> m_fadedIcons;
     QIcon m_nonEmptyFolderIcon;
+    mutable QHash<QUrl, bool> m_folderHasContents;
 };
 
 DirectoryModel::DirectoryModel(QObject *parent)
@@ -405,6 +446,19 @@ DirectoryModel::DirectoryModel(QObject *parent)
         for (const KFileItem &item : items)
             urls.append(item.url());
         Q_EMIT itemsAdded(urls);
+    });
+    // After KDirModel's own handling, connected when it was made, so the
+    // model already has the new names when this goes out
+    connect(lister, &KCoreDirLister::refreshItems, this,
+            [this](const QList<QPair<KFileItem, KFileItem>> &entries) {
+        QList<QUrl> urls;
+        for (const auto &entry : entries) {
+            const bool renamed = entry.first.url() != entry.second.url();
+            if (renamed)
+                urls.append(entry.second.url());
+        }
+        if (!urls.isEmpty())
+            Q_EMIT itemsRenamed(urls);
     });
 }
 

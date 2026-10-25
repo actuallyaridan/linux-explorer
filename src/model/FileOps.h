@@ -30,6 +30,10 @@ void emptyTrash(QWidget *window);
 // FIXME
 // It feels wrong to use this global variable in general, but at the same time,
 // we don't have to worry about dangling contexts.
+//
+// Inline rather than static, since a static one in a header gives every file
+// that includes it a private copy of its own, so a rename finishing in
+// FileOps.cpp signalled a copy MainWindow.cpp was not listening to
 class GlobalRenameContext : public QObject {
     Q_OBJECT
 
@@ -42,7 +46,7 @@ Q_SIGNALS:
     void finishRenameBatch(const QList<QUrl> &urls);
 };
 
-static GlobalRenameContext GLOBAL_RENAME_CONTEXT;
+inline GlobalRenameContext GLOBAL_RENAME_CONTEXT;
 
 bool rename(const QUrl &url, const QString &newName, QWidget *window);
 

@@ -90,6 +90,10 @@ Q_SIGNALS:
     // returns before the lister has seen it
     void itemsAdded(const QList<QUrl> &urls);
 
+    // A rename arrives as an item refreshed under its new name rather than
+    // one added, and the window waits on it to select what was renamed
+    void itemsRenamed(const QList<QUrl> &urls);
+
 private:
     KDirModel *m_dirModel = nullptr;
     Win7ColumnProxy *m_proxy = nullptr;
