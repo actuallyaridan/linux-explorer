@@ -333,8 +333,15 @@ QList<MainWindow::Crumb> MainWindow::crumbsFor(const QUrl &url) const
     if (!url.isLocalFile()) {
         // Remote and virtual locations hang straight off Computer
         QString label = url.scheme();
-        if (url.scheme() == QLatin1String("trash"))
+        if (url.scheme() == QLatin1String("trash")) {
             label = tr("Recycle Bin");
+        } else if (url.scheme() == QLatin1String("remote")) {
+            label = tr("Network");
+        } else if (url.scheme() == QLatin1String("recentlyused")) {
+            // The places model's Win7 name for this section
+            label = url.path() == QLatin1String("/files") ? tr("Recent Files")
+                                                          : tr("Recent Places");
+        }
         crumbs.append({label, url});
         return crumbs;
     }

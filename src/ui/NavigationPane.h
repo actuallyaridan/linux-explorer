@@ -64,8 +64,17 @@ private:
 
     QTreeWidgetItem *addGroup(const QString &title,
                               std::initializer_list<const char *> iconNames,
-                              const QUrl &url = QUrl());
-    void addEntry(QTreeWidgetItem *group, const QModelIndex &placeIndex);
+                              bool favorites, const QUrl &url = QUrl());
+    void addEntry(QTreeWidgetItem *group, const QModelIndex &placeIndex,
+                  const QString &name = QString());
+
+    // The favorites are ordinary places in the model, so this is how Win7's
+    // "Add current location to Favorites" and its drop target reach it
+    void addFavorite(const QUrl &url, const QString &name = QString());
+    void restoreFavoriteLinks();
+    bool canAddFavorite(const QUrl &url) const;
+    QString favoriteName(const QUrl &url) const;
+    QModelIndex placeForUrl(const QUrl &url) const;
 
     // A placeholder child makes the triangle appear without reading the
     // subfolders, since scanning up front would stall on an unresponsive mount
