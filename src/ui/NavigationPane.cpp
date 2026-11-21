@@ -22,6 +22,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QStandardPaths>
+#include <QToolTip>
 #include <QTreeWidget>
 #include <QVariantAnimation>
 #include <QVBoxLayout>
@@ -87,7 +88,23 @@ constexpr int kPlaceholderRole = Qt::UserRole + 1;
 // Absent for the headings and for subfolders found by walking the filesystem
 constexpr int kPlaceRowRole = Qt::UserRole + 2;
 
+// Marks the four headings, since only the favorites one takes an added place
+constexpr int kFavoritesGroupRole = Qt::UserRole + 3;
+
 constexpr int kGroupSpacing = 10;
+
+// Win7's Recent Places is the model's "Recent Locations"; the sibling "Recent
+// Files" is a KDE extra with no Win7 counterpart in the navigation pane
+bool isRecentLocations(const QUrl &url)
+{
+    return url.scheme() == QLatin1String("recentlyused")
+        && url.path() == QLatin1String("/locations");
+}
+
+bool isFavoritesGroup(const QTreeWidgetItem *item)
+{
+    return item && item->data(0, kFavoritesGroupRole).toBool();
+}
 
 // A spacer row rather than extra height on the headings, since padding a
 // heading moves its text but not its expander triangle
@@ -192,6 +209,9 @@ NavigationPane::NavigationPane(QWidget *parent)
     m_tree->setSelectionMode(QAbstractItemView::SingleSelection);
     m_tree->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_tree->setExpandsOnDoubleClick(false);
+    // Win7's tree uses the small 16px glyphs; asking for them here keeps that
+    // even when the desktop's style reports a larger small-icon metric
+    m_tree->setIconSize(QSize(16, 16));
     Aero::setPointSize(m_tree, 9);
 
     // Without the proxy the focus keys land on this container, which cannot
@@ -226,7 +246,10 @@ NavigationPane::NavigationPane(QWidget *parent)
         " { border-image: none; image: url(:/win7/branch-closed.png); }"
         "#win7NavPane::branch:open:has-children:!has-siblings,"
         "#win7NavPane::branch:open:has-children:has-siblings"
-        " { border-image: none; image: url(:/win7/branch-open.png); }");
+        " { border-image: none; image: url(:/win7/branch-open.png); }"
+        // The pane is Win7's white whatever the desktop's palette says, so its
+        // text is fixed rather than inherited from a dark colour scheme
+        "#win7NavPane, #win7NavPane::item { color: #000000; }");
 
     // Single click activates here, unlike the file list
     connect(m_tree, &QTreeWidget::itemClicked, this,
@@ -335,12 +358,14 @@ QTreeWidgetItem *NavigationPane::itemForUrl(const QUrl &url) const
 
 QTreeWidgetItem *NavigationPane::addGroup(const QString &title,
                                           std::initializer_list<const char *> iconNames,
-                                          const QUrl &url)
+                                          bool favorites, const QUrl &url)
 {
     auto *item = new QTreeWidgetItem(m_tree);
     item->setText(0, title);
     item->setIcon(0, Aero::themeIcon(iconNames));
     item->setData(0, kPlaceRowRole, -1);
+    if (favorites)
+        item->setData(0, kFavoritesGroupRole, true);
     if (url.isValid()) {
         item->setData(0, Qt::UserRole, url);
     } else {
@@ -350,7 +375,8 @@ QTreeWidgetItem *NavigationPane::addGroup(const QString &title,
     return item;
 }
 
-void NavigationPane::addEntry(QTreeWidgetItem *group, const QModelIndex &placeIndex)
+void NavigationPane::addEntry(QTreeWidgetItem *group, const QModelIndex &placeIndex,
+                              const QString &name)
 {
     const QUrl url = m_places->url(placeIndex);
 
@@ -362,11 +388,165 @@ void NavigationPane::addEntry(QTreeWidgetItem *group, const QModelIndex &placeIn
 
     auto *item = new QTreeWidgetItem(group);
     // One call covers every kind of place
-    item->setText(0, Branding::displayName(url, DriveLabel::forPlace(m_places, placeIndex)));
+    item->setText(0, name.isEmpty()
+                         ? Branding::displayName(url, DriveLabel::forPlace(m_places, placeIndex))
+                         : name);
     item->setIcon(0, m_places->icon(placeIndex));
     item->setData(0, Qt::UserRole, url);
     item->setData(0, kPlaceRowRole, placeIndex.row());
     addPlaceholderIfExpandable(item, url);
+}
+
+QModelIndex NavigationPane::placeForUrl(const QUrl &url) const
+{
+    if (!url.isValid())
+        return {};
+
+    for (int row = 0; row < m_places->rowCount(); ++row) {
+        const QModelIndex index = m_places->index(row, 0);
+        if (m_places->url(index).matches(url, QUrl::StripTrailingSlash))
+            return index;
+    }
+    return {};
+}
+
+bool NavigationPane::canAddFavorite(const QUrl &url) const
+{
+    if (!url.isValid() || url.isEmpty())
+        return false;
+    if (Locations::isComputer(url) || Locations::isControlPanel(url))
+        return false;
+    if (url.scheme() == QLatin1String("trash"))
+        return false;
+
+    // The model holds folders, and Win7's favorites are folder links; a file
+    // dragged here would be a place the pane cannot open as a folder
+    if (url.isLocalFile())
+        return QFileInfo(url.toLocalFile()).isDir();
+
+    // Bare protocol roots already have a heading of their own
+    if (url.scheme() == QLatin1String("remote") && url.path().isEmpty())
+        return false;
+    // The Recent Files query is a document list, not a folder, and rebuild()
+    // deliberately leaves it out of Win7's Favorites
+    if (url.scheme() == QLatin1String("recentlyused"))
+        return false;
+
+    return true;
+}
+
+QString NavigationPane::favoriteName(const QUrl &url) const
+{
+    if (Locations::isSearch(url)) {
+        const QString term = Locations::searchTerm(url);
+        return term.isEmpty() ? tr("Search results")
+                              : tr("Search results for \"%1\"").arg(term);
+    }
+
+    if (url.isLocalFile()) {
+        const QString path = QDir::cleanPath(url.toLocalFile());
+        QString name = QFileInfo(path).fileName();
+        if (name.isEmpty())
+            name = path;
+        return Branding::displayName(url, name);
+    }
+
+    QString name = url.fileName();
+    if (name.isEmpty())
+        name = url.host();
+    if (name.isEmpty())
+        name = url.toDisplayString();
+    return Branding::displayName(url, name);
+}
+
+void NavigationPane::addFavorite(const QUrl &url, const QString &name)
+{
+    if (!canAddFavorite(url))
+        return;
+
+    // Adding a place that is already there would produce two rows, and a
+    // hidden one is brought back instead
+    const QModelIndex existing = placeForUrl(url);
+    if (existing.isValid()) {
+        const KFilePlacesModel::GroupType group = m_places->groupType(existing);
+        if (m_places->isGroupHidden(group))
+            m_places->setGroupHidden(group, false);
+        if (m_places->isHidden(existing))
+            m_places->setPlaceHidden(existing, false);
+        return;
+    }
+
+    const QString label = name.trimmed().isEmpty() ? favoriteName(url)
+                                                   : name.trimmed();
+    QString icon = QStringLiteral("folder");
+    if (Locations::isSearch(url))
+        icon = QStringLiteral("folder-search");
+    else if (isRecentLocations(url))
+        icon = QStringLiteral("folder-open-recent");
+    else if (url.scheme() == QLatin1String("remote"))
+        icon = QStringLiteral("folder-network");
+
+    m_places->addPlace(label, url, icon, QString());
+}
+
+void NavigationPane::restoreFavoriteLinks()
+{
+    // Win7's Restore favorite links puts back the three it ships with, without
+    // touching the user's own added folders
+    const auto restore = [this](const QUrl &url, const QString &name,
+                                const QString &icon,
+                                const QModelIndex &after) {
+        const QModelIndex index = placeForUrl(url);
+        if (!index.isValid()) {
+            m_places->addPlace(name, url, icon, QString(), after);
+            return;
+        }
+
+        const KFilePlacesModel::GroupType group = m_places->groupType(index);
+        // Recent Places is shown by rebuild() even while KDE keeps its whole
+        // Recently Saved section hidden, so restoring it must not flip that
+        // desktop-wide preference and bring Recent Files along with it
+        if (group == KFilePlacesModel::RecentlySavedType)
+            return;
+        if (m_places->isGroupHidden(group))
+            m_places->setGroupHidden(group, false);
+        if (m_places->isHidden(index))
+            m_places->setPlaceHidden(index, false);
+    };
+
+    // The two default folder links sit directly below Home, as in Win7, while
+    // RecentlySaved has its own section and is ordered by rebuild()
+    int homeRow = -1;
+    for (int row = 0; row < m_places->rowCount(); ++row) {
+        const QUrl url = m_places->url(m_places->index(row, 0));
+        if (url.isLocalFile()
+            && QDir::cleanPath(url.toLocalFile()) == QDir::homePath()) {
+            homeRow = row;
+            break;
+        }
+    }
+    const QModelIndex afterHome =
+        homeRow >= 0 ? m_places->index(homeRow, 0) : QModelIndex();
+
+    const QString desktop =
+        QStandardPaths::writableLocation(QStandardPaths::DesktopLocation);
+    if (!desktop.isEmpty()) {
+        restore(QUrl::fromLocalFile(desktop), tr("Desktop"),
+                QStringLiteral("user-desktop"), afterHome);
+    }
+
+    const QModelIndex afterDesktop = placeForUrl(
+        desktop.isEmpty() ? QUrl() : QUrl::fromLocalFile(desktop));
+    const QString downloads =
+        QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
+    if (!downloads.isEmpty()) {
+        restore(QUrl::fromLocalFile(downloads), tr("Downloads"),
+                QStringLiteral("folder-downloads"),
+                afterDesktop.isValid() ? afterDesktop : afterHome);
+    }
+
+    restore(QUrl(QStringLiteral("recentlyused:/locations")), tr("Recent Places"),
+            QStringLiteral("folder-open-recent"), QModelIndex());
 }
 
 void NavigationPane::addPlaceholderIfExpandable(QTreeWidgetItem *item, const QUrl &url)
@@ -458,30 +638,43 @@ void NavigationPane::rebuild()
     m_tree->clear();
 
     QTreeWidgetItem *favorites =
-        addGroup(tr("Favorites"), {"favorites", "bookmarks", "starred"});
+        addGroup(tr("Favorites"), {"favorites", "bookmarks", "starred"}, true);
     QTreeWidgetItem *libraries =
-        addGroup(tr("Libraries"), {"folder-library", "folder-documents", "folder"});
+        addGroup(tr("Libraries"), {"folder-library", "folder-documents", "folder"},
+                 false);
     QTreeWidgetItem *computer =
-        addGroup(tr("Computer"), {"computer", "computer-laptop"}, Locations::computer());
+        addGroup(tr("Computer"), {"computer", "computer-laptop"}, false,
+                 Locations::computer());
     QTreeWidgetItem *network =
         addGroup(tr("Network"), {"folder-network", "network-workgroup", "network-server"},
-                 QUrl(QStringLiteral("remote:/")));
+                 false, QUrl(QStringLiteral("remote:/")));
 
     for (int row = 0; row < m_places->rowCount(); ++row) {
         const QModelIndex index = m_places->index(row, 0);
-        if (m_places->isHidden(index))
+        const QUrl placeUrl = m_places->url(index);
+        const KFilePlacesModel::GroupType placeGroup = m_places->groupType(index);
+
+        // Recent Places is a system entry that KDE hides together with its
+        // Recent Files sibling; Win7 always shows it, and only when the user
+        // actually removed it does it disappear
+        const bool recentLocations =
+            placeGroup == KFilePlacesModel::RecentlySavedType
+            && isRecentLocations(placeUrl);
+        if (m_places->isHidden(index) && !recentLocations)
             continue;
 
-        const QUrl placeUrl = m_places->url(index);
-
         QTreeWidgetItem *group = nullptr;
-        switch (m_places->groupType(index)) {
+        switch (placeGroup) {
         case KFilePlacesModel::PlacesType: {
             // Win7 keeps no home entry here, it being a third route to a place
             // the other two groups already reach
             const bool isHome = placeUrl.isLocalFile()
                 && QDir::cleanPath(placeUrl.toLocalFile()) == QDir::homePath();
             if (isHome)
+                continue;
+
+            // Win7 keeps the recycle bin on the desktop, not in this pane
+            if (placeUrl.scheme() == QLatin1String("trash"))
                 continue;
 
             if (isLibraryPlace(placeUrl))
@@ -491,6 +684,10 @@ void NavigationPane::rebuild()
             break;
         }
         case KFilePlacesModel::RecentlySavedType:
+            // Win7's Favorites has Recent Places, not a Recent Files entry
+            if (recentLocations)
+                group = favorites;
+            break;
         case KFilePlacesModel::SearchForType:
             group = favorites;
             break;
@@ -507,7 +704,44 @@ void NavigationPane::rebuild()
         default:
             continue;   // tags and anything new upstream adds
         }
-        addEntry(group, index);
+
+        if (!group)
+            continue;
+        addEntry(group, index, recentLocations ? tr("Recent Places") : QString());
+    }
+
+    // KDE files Recent Locations in a section after every user place, while
+    // Win7 puts Recent Places directly below Desktop and Downloads
+    QTreeWidgetItem *recentItem = nullptr;
+    for (int i = 0; i < favorites->childCount(); ++i) {
+        if (isRecentLocations(urlForItem(favorites->child(i)))) {
+            recentItem = favorites->child(i);
+            break;
+        }
+    }
+    if (recentItem) {
+        const auto matchesLocation = [this](QTreeWidgetItem *item,
+                                             QStandardPaths::StandardLocation location) {
+            const QString path = QStandardPaths::writableLocation(location);
+            const QUrl url = urlForItem(item);
+            return !path.isEmpty() && url.isLocalFile()
+                && QDir::cleanPath(url.toLocalFile()) == QDir::cleanPath(path);
+        };
+
+        int insert = 0;
+        if (favorites->childCount() > insert
+            && matchesLocation(favorites->child(insert),
+                               QStandardPaths::DesktopLocation)) {
+            ++insert;
+        }
+        if (favorites->childCount() > insert
+            && matchesLocation(favorites->child(insert),
+                               QStandardPaths::DownloadLocation)) {
+            ++insert;
+        }
+
+        favorites->takeChild(favorites->indexOfChild(recentItem));
+        favorites->insertChild(insert, recentItem);
     }
 
     // Win7 opens with the groups expanded, and an empty heading would sit there
@@ -611,70 +845,87 @@ void NavigationPane::showContextMenu(const QPoint &pos)
 
     QMenu menu(this);
 
-    if (url.isValid()) {
-        menu.addAction(tr("Open"), this, [this, url] { Q_EMIT urlActivated(url); });
+    if (isFavoritesGroup(item)) {
+        // Win7's two commands on the Favorites heading itself
+        QAction *add = menu.addAction(tr("Add current location to Favorites"),
+                                      this, [this] { addFavorite(m_currentUrl); });
+        add->setEnabled(canAddFavorite(m_currentUrl)
+                        && !placeForUrl(m_currentUrl).isValid());
+        menu.addAction(tr("Restore favorite links"), this,
+                       &NavigationPane::restoreFavoriteLinks);
         menu.addSeparator();
-    }
-
-    if (url.scheme() == QLatin1String("trash")) {
-        menu.addAction(tr("Empty Recycle Bin"), this,
-                       [this] { Q_EMIT emptyTrashRequested(); });
-        menu.addSeparator();
-    }
-
-    if (Locations::isComputer(url)) {
-        menu.addAction(tr("Connect drives..."), this,
-                       [this] { Q_EMIT connectDrivesRequested(); });
-        menu.addSeparator();
-    }
-
-    if (url.scheme() == QLatin1String("remote")) {
-        menu.addAction(tr("Map network drive..."), this,
-                       [this] { Q_EMIT mapDriveRequested(); });
-        menu.addSeparator();
-    }
-
-    // A subfolder found on the filesystem has no bookmark behind it to edit
-    if (placeIndex.isValid()) {
-        const bool device = m_places->isDevice(placeIndex);
-
-        menu.addAction(tr("Rename..."), this, [this, placeIndex] {
-            bool ok = false;
-            const QString name = QInputDialog::getText(
-                this, tr("Rename"), tr("Name:"), QLineEdit::Normal,
-                m_places->text(placeIndex), &ok);
-            if (ok && !name.isEmpty()) {
-                m_places->editPlace(placeIndex, name, m_places->url(placeIndex),
-                                    m_places->icon(placeIndex).name());
-            }
-        });
-
-        if (!device) {
-            // Devices come from the system, so removing one could only mean
-            // hiding it, which is the entry below
-            menu.addAction(tr("Remove"), this,
-                           [this, placeIndex] { m_places->removePlace(placeIndex); });
+    } else {
+        if (url.isValid()) {
+            menu.addAction(tr("Open"), this, [this, url] { Q_EMIT urlActivated(url); });
+            menu.addSeparator();
         }
-        menu.addAction(tr("Hide"), this, [this, placeIndex] {
-            m_places->setPlaceHidden(placeIndex, true);
-        });
 
-        menu.addSeparator();
-        QAction *up = menu.addAction(tr("Move up"));
-        up->setEnabled(placeRow > 0);
-        connect(up, &QAction::triggered, this,
-                [this, placeRow] { m_places->movePlace(placeRow, placeRow - 1); });
-        QAction *down = menu.addAction(tr("Move down"));
-        down->setEnabled(placeRow < m_places->rowCount() - 1);
-        connect(down, &QAction::triggered, this,
-                [this, placeRow] { m_places->movePlace(placeRow, placeRow + 2); });
-        menu.addSeparator();
-    } else if (url.isLocalFile()) {
-        menu.addAction(tr("Add to Favorites"), this, [this, url, item] {
-            m_places->addPlace(item->text(0), url,
-                               QStringLiteral("folder"), QString());
-        });
-        menu.addSeparator();
+        if (url.scheme() == QLatin1String("trash")) {
+            menu.addAction(tr("Empty Recycle Bin"), this,
+                           [this] { Q_EMIT emptyTrashRequested(); });
+            menu.addSeparator();
+        }
+
+        if (Locations::isComputer(url)) {
+            menu.addAction(tr("Connect drives..."), this,
+                           [this] { Q_EMIT connectDrivesRequested(); });
+            menu.addSeparator();
+        }
+
+        if (url.scheme() == QLatin1String("remote")) {
+            menu.addAction(tr("Map network drive..."), this,
+                           [this] { Q_EMIT mapDriveRequested(); });
+            menu.addSeparator();
+        }
+
+        // A subfolder found on the filesystem has no bookmark behind it to edit
+        if (placeIndex.isValid()) {
+            const bool device = m_places->isDevice(placeIndex);
+            const bool favorite = item->parent() && isFavoritesGroup(item->parent());
+
+            menu.addAction(tr("Rename..."), this, [this, placeIndex] {
+                bool ok = false;
+                const QString name = QInputDialog::getText(
+                    this, tr("Rename"), tr("Name:"), QLineEdit::Normal,
+                    m_places->text(placeIndex), &ok);
+                if (ok && !name.isEmpty()) {
+                    m_places->editPlace(placeIndex, name, m_places->url(placeIndex),
+                                        m_places->icon(placeIndex).name());
+                }
+            });
+
+            if (!device) {
+                // Devices come from the system, so removing one could only mean
+                // hiding it, which is the entry below
+                menu.addAction(tr("Remove"), this,
+                               [this, placeIndex] { m_places->removePlace(placeIndex); });
+            }
+            // Win7's favorites have no Hide, only Remove and Rename
+            if (!favorite) {
+                menu.addAction(tr("Hide"), this, [this, placeIndex] {
+                    m_places->setPlaceHidden(placeIndex, true);
+                });
+            }
+
+            menu.addSeparator();
+            QAction *up = menu.addAction(tr("Move up"));
+            up->setEnabled(placeRow > 0);
+            connect(up, &QAction::triggered, this,
+                    [this, placeRow] { m_places->movePlace(placeRow, placeRow - 1); });
+            QAction *down = menu.addAction(tr("Move down"));
+            down->setEnabled(placeRow < m_places->rowCount() - 1);
+            connect(down, &QAction::triggered, this,
+                    [this, placeRow] { m_places->movePlace(placeRow, placeRow + 2); });
+            menu.addSeparator();
+        } else if (url.isLocalFile()) {
+            const QString name = item->text(0);
+            QAction *add = menu.addAction(tr("Add to Favorites"), this,
+                                          [this, url, name] {
+                addFavorite(url, name);
+            });
+            add->setEnabled(canAddFavorite(url) && !placeForUrl(url).isValid());
+            menu.addSeparator();
+        }
     }
 
     QAction *showHidden = menu.addAction(tr("Show hidden places"));
@@ -706,6 +957,17 @@ bool NavigationPane::eventFilter(QObject *watched, QEvent *event)
         return url;
     };
 
+    const auto hasFavoriteCandidate = [this](const QMimeData *mime) {
+        if (!mime || !mime->hasUrls())
+            return false;
+        const QList<QUrl> urls = mime->urls();
+        for (const QUrl &url : urls) {
+            if (canAddFavorite(url))
+                return true;
+        }
+        return false;
+    };
+
     switch (event->type()) {
     case QEvent::MouseButtonPress: {
         auto *mouse = static_cast<QMouseEvent *>(event);
@@ -727,17 +989,54 @@ bool NavigationPane::eventFilter(QObject *watched, QEvent *event)
     case QEvent::DragMove: {
         auto *drag = static_cast<QDragMoveEvent *>(event);
         const QPoint pos = drag->position().toPoint();
+        QTreeWidgetItem *item = m_tree->itemAt(pos);
+
+        // Win7's "Create a link in favorites": the heading is a destination
+        // even though it has no folder URL of its own
+        if (isFavoritesGroup(item)) {
+            if (hasFavoriteCandidate(drag->mimeData())) {
+                drag->acceptProposedAction();
+                m_tree->setCurrentItem(item);
+                const QString tip = tr("Create a link in Favorites");
+                if (!QToolTip::isVisible() || QToolTip::text() != tip) {
+                    QToolTip::showText(m_tree->viewport()->mapToGlobal(pos),
+                                       tip, m_tree);
+                }
+            } else {
+                drag->ignore();
+            }
+            return true;
+        }
+
+        QToolTip::hideText();
         const QUrl target = targetAt(pos);
         if (drag->mimeData()->hasUrls() && target.isValid()) {
             drag->acceptProposedAction();
-            m_tree->setCurrentItem(m_tree->itemAt(pos));
+            m_tree->setCurrentItem(item);
         } else {
             drag->ignore();
         }
         return true;
     }
+    case QEvent::DragLeave:
+        QToolTip::hideText();
+        break;
     case QEvent::Drop: {
         auto *drop = static_cast<QDropEvent *>(event);
+        QTreeWidgetItem *item = m_tree->itemAt(drop->position().toPoint());
+        QToolTip::hideText();
+
+        if (isFavoritesGroup(item)) {
+            if (hasFavoriteCandidate(drop->mimeData())) {
+                const QList<QUrl> urls = drop->mimeData()->urls();
+                for (const QUrl &url : urls)
+                    addFavorite(url);
+                drop->acceptProposedAction();
+            }
+            // Consumed either way, or the tree makes rows out of the files
+            return true;
+        }
+
         const QUrl target = targetAt(drop->position().toPoint());
         if (target.isValid()) {
             Q_EMIT dropped(drop, target);
